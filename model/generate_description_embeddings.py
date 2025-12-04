@@ -33,8 +33,10 @@ for split in ['train', 'validation']:
     # Generate embeddings
     ids = []
     embeddings = []
+
+    n = 10
     
-    for graph in tqdm(graphs, total=len(graphs)):
+    for graph in tqdm(graphs[:n], desc=f"Processing {split}"):
         # Get description from graph
         description = graph.description
         

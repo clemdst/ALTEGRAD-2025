@@ -10,12 +10,23 @@ from data_utils import (
 )
 
 from train_gcn import (
-    MolGNN, DEVICE, TRAIN_GRAPHS, TEST_GRAPHS, TRAIN_EMB_CSV
+    MolGNN, DEVICE, TRAIN_GRAPHS, TEST_GRAPHS, TRAIN_EMB_CSV, 
+    LimitedGraphDataset, TEST_MODE, N_SAMPLES
 )
 
 
+def create_limited_emb_dict(full_emb_dict, n_samples):
+    """Create a limited embedding dictionary with only the first n_samples"""
+    limited_dict = {}
+    for i, (key, value) in enumerate(full_emb_dict.items()):
+        if i >= n_samples:
+            break
+        limited_dict[key] = value
+    return limited_dict
+
+
 @torch.no_grad()
-def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, output_csv):
+def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, output_csv, test_mode=False, n_test_samples=None):
     """
     Args:
         model: Trained GNN model
@@ -24,6 +35,8 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
         train_emb_dict: Dictionary mapping train IDs to text embeddings
         device: Device to run on
         output_csv: Path to save retrieved descriptions
+        test_mode: Whether to limit the number of test samples
+        n_test_samples: Number of test samples to process (if test_mode=True)
     """
     train_id2desc = load_descriptions_from_graphs(train_data)
     
@@ -33,10 +46,17 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
     
     print(f"Train set size: {len(train_ids)}")
     
-    test_ds = PreprocessedGraphDataset(test_data)
-    test_dl = DataLoader(test_ds, batch_size=64, shuffle=False, collate_fn=collate_fn)
+    # Create test dataset (with potential limitation)
+    full_test_ds = PreprocessedGraphDataset(test_data)
     
-    print(f"Test set size: {len(test_ds)}")
+    if test_mode and n_test_samples is not None:
+        test_ds = LimitedGraphDataset(full_test_ds, n_test_samples)
+        print(f"Limited test dataset to {len(test_ds)} samples")
+    else:
+        test_ds = full_test_ds
+        print(f"Using full test dataset with {len(test_ds)} samples")
+    
+    test_dl = DataLoader(test_ds, batch_size=64, shuffle=False, collate_fn=collate_fn)
     
     test_mol_embs = []
     test_ids_ordered = []
@@ -46,7 +66,15 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
         test_mol_embs.append(mol_emb)
         batch_size = graphs.num_graphs
         start_idx = len(test_ids_ordered)
-        test_ids_ordered.extend(test_ds.ids[start_idx:start_idx + batch_size])
+        
+        # Get IDs from the limited dataset
+        if test_mode and n_test_samples is not None:
+            # For limited dataset, get IDs from the underlying full dataset
+            end_idx = min(start_idx + batch_size, len(test_ds))
+            for j in range(start_idx, end_idx):
+                test_ids_ordered.append(test_ds.dataset.ids[j])
+        else:
+            test_ids_ordered.extend(test_ds.ids[start_idx:start_idx + batch_size])
     
     test_mol_embs = torch.cat(test_mol_embs, dim=0)
     print(f"Encoded {test_mol_embs.size(0)} test molecules")
@@ -81,7 +109,17 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
 def main():
     print(f"Device: {DEVICE}")
     
-    output_csv = "test_retrieved_descriptions.csv"
+    if TEST_MODE:
+        print(f"Running in TEST MODE with {N_SAMPLES} samples")
+        output_csv = f"test_retrieved_descriptions_limited_{N_SAMPLES}.csv"
+        # Use limited embeddings for train set too
+        full_train_emb = load_id2emb(TRAIN_EMB_CSV)
+        train_emb = create_limited_emb_dict(full_train_emb, N_SAMPLES)
+        n_test_samples = N_SAMPLES // 2  # Use fewer test samples
+    else:
+        output_csv = "test_retrieved_descriptions.csv"
+        train_emb = load_id2emb(TRAIN_EMB_CSV)
+        n_test_samples = None
     
     model_path = "model_checkpoint.pt"
     if not os.path.exists(model_path):
@@ -92,8 +130,6 @@ def main():
     if not os.path.exists(TEST_GRAPHS):
         print(f"Error: Preprocessed graphs not found at {TEST_GRAPHS}")
         return
-    
-    train_emb = load_id2emb(TRAIN_EMB_CSV)
     
     emb_dim = len(next(iter(train_emb.values())))
     
@@ -108,11 +144,11 @@ def main():
         test_data=TEST_GRAPHS,
         train_emb_dict=train_emb,
         device=DEVICE,
-        output_csv=output_csv
+        output_csv=output_csv,
+        test_mode=TEST_MODE,
+        n_test_samples=n_test_samples
     )
-    
 
 
 if __name__ == "__main__":
     main()
-
