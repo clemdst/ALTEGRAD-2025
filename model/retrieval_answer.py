@@ -9,7 +9,7 @@ from data_utils import (
     load_id2emb, load_descriptions_from_graphs, PreprocessedGraphDataset, collate_fn
 )
 
-from train_gcn import (
+from train_gineconv import (
     MolGNN, DEVICE, TRAIN_GRAPHS, TEST_GRAPHS, TRAIN_EMB_CSV, 
     LimitedGraphDataset, TEST_MODE, N_SAMPLES
 )

@@ -27,8 +27,8 @@ TRAIN_GRAPHS = "data/train_graphs.pkl"
 VAL_GRAPHS   = "data/validation_graphs.pkl"
 TEST_GRAPHS  = "data/test_graphs.pkl"
 
-TRAIN_EMB_CSV = "data/train_embeddings.csv"
-VAL_EMB_CSV   = "data/validation_embeddings.csv"
+TRAIN_EMB_CSV = "../train_scibert_embeddings.csv"
+VAL_EMB_CSV   = "../validation_scibert_embeddings.csv"
 
 # Training parameters
 BATCH_SIZE = 32
@@ -72,17 +72,7 @@ class MolGINE(nn.Module):
             self.convs.append(GINEConv(mlp))
         
         self.proj = nn.Linear(hidden, out_dim)
-        
-        
-        #old
-        # # Use a single learnable embedding for all nodes (no node features)
-        # self.node_init = nn.Parameter(torch.randn(hidden))
 
-        # self.convs = nn.ModuleList()
-        # for _ in range(layers):
-        #     self.convs.append(GCNConv(hidden, hidden))
-
-        # self.proj = nn.Linear(hidden, out_dim)
 
     def forward(self, batch: Batch):
         #Embed node features
@@ -111,19 +101,6 @@ class MolGINE(nn.Module):
         g = global_add_pool(x, batch.batch)
         g = self.proj(g)
         g = F.normalize(g, dim=-1)
-        return g
-     
-        #old
-        # # Initialize all nodes with the same learnable embedding
-        # num_nodes = batch.x.size(0)
-        # h = self.node_init.unsqueeze(0).expand(num_nodes, -1)
-        
-        # for conv in self.convs:
-        #     h = conv(h, batch.edge_index)
-        #     h = F.relu(h)
-        # g = global_add_pool(h, batch.batch)
-        # g = self.proj(g)
-        # g = F.normalize(g, dim=-1)
         return g
     
 
