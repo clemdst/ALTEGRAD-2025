@@ -19,16 +19,16 @@ from data_utils import (
 # =========================================================
 # CONFIGURATION
 # =========================================================
-TRAIN_GRAPHS = "./data/train_graphs.pkl"
-VAL_GRAPHS   = "./data/validation_graphs.pkl"
-TEST_GRAPHS  = "./data/test_graphs.pkl"
+TRAIN_GRAPHS = "./kaggle/input/molecular-data/{split}_graphs.pkl"
+VAL_GRAPHS   = './kaggle/input/molecular-data/{split}_graphs.pkl' 
+TEST_GRAPHS  = './kaggle/input/molecular-data/{split}_graphs.pkl' 
 
 # Using your specific SciBERT embeddings
-TRAIN_EMB_CSV = "./train_scibert_embeddings.csv"
-VAL_EMB_CSV   = "./validation_scibert_embeddings.csv"
+TRAIN_EMB_CSV = "./train_stacked_embeddings.csv"
+VAL_EMB_CSV   = "./val_stacked_embeddings.csv"
 
 # Output Paths
-MODEL_PATH = "dual_tower_best.pt"
+MODEL_PATH = "dual_tower_hard_neg.pt"
 
 # Training Settings
 # Set TRAIN_FULL_DATA = True for your FINAL run (uses Train + Val)
