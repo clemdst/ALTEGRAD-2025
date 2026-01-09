@@ -28,15 +28,15 @@ TRAIN_EMB_CSV = "/kaggle/working/ALTEGRAD-2025/train_stacked_embeddings.csv"
 VAL_EMB_CSV   = "/kaggle/working/ALTEGRAD-2025/validation_stacked_embeddings.csv"
 
 # Output Paths
-MODEL_PATH = "dual_tower_hard_neg.pt"
+MODEL_PATH = "dual_tower_hard_neg_V2.pt"
 
 # Training Settings
 # Set TRAIN_FULL_DATA = True for your FINAL run (uses Train + Val)
 # Set TRAIN_FULL_DATA = False to monitor validation score first
 TRAIN_FULL_DATA = True 
 
-BATCH_SIZE = 24       
-EPOCHS = 25           
+BATCH_SIZE = 48      
+EPOCHS = 10           
 LR = 2e-4             
 WEIGHT_DECAY = 1e-4
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -389,12 +389,12 @@ def main():
 
     print("Loading Embeddings...")
     train_emb = load_id2emb(TRAIN_EMB_CSV)
-    val_emb = load_id2emb(VAL_EMB_CSV) if os.path.exists(VAL_EMB_CSV) else {}
+    val_emb = load_id2emb(VAL_EMB_CSV) #if os.path.exists(VAL_EMB_CSV) else {}
     
     # 2. Prepare Datasets
     print("Loading Graph Datasets...")
     train_ds_raw = PreprocessedGraphDataset(TRAIN_GRAPHS, train_emb)
-    val_ds_raw = PreprocessedGraphDataset(VAL_GRAPHS, val_emb) if val_emb else None
+    val_ds_raw = PreprocessedGraphDataset(VAL_GRAPHS, val_emb) #if val_emb else None
 
     # 3. Detect embedding dimension from first sample
     sample_emb = next(iter(train_emb.values()))
