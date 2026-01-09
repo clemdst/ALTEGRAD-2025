@@ -225,7 +225,7 @@ def main():
         print('='*80)
         
         # Load graphs
-        pkl_path = f'./kaggle/input/molecular-data/{split}_graphs.pkl' 
+        pkl_path = f'/kaggle/input/molecular-data/{split}_graphs.pkl' 
         if not os.path.exists(pkl_path):
             print(f"⚠ Warning: File not found {pkl_path}, skipping...")
             continue
