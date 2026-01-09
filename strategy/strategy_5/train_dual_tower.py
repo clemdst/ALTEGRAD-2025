@@ -10,7 +10,7 @@ from tqdm import tqdm
 from torch_geometric.data import Batch
 from torch_geometric.nn import TransformerConv, global_add_pool, global_mean_pool
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb, load_descriptions_from_graphs,
     PreprocessedGraphDataset, collate_fn,
     x_map, e_map
@@ -24,12 +24,11 @@ VAL_GRAPHS   = "./data/validation_graphs.pkl"
 TEST_GRAPHS  = "./data/test_graphs.pkl"
 
 # Using your specific SciBERT embeddings
-TRAIN_EMB_CSV = "./train_scibert_embeddings.csv"
-VAL_EMB_CSV   = "./validation_scibert_embeddings.csv"
+TRAIN_EMB_CSV = "embeddings/train_scibert_embeddings.csv"
+VAL_EMB_CSV   = "embeddings/validation_scibert_embeddings.csv"
 
 # Output Paths
-MODEL_PATH = "dual_tower_best.pt"
-
+MODEL_PATH = "models/model_strategy_5.pt"
 # Training Settings
 # Set TRAIN_FULL_DATA = True for your FINAL run (uses Train + Val)
 # Set TRAIN_FULL_DATA = False to monitor validation score first

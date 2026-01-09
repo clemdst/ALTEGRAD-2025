@@ -5,11 +5,11 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb, load_descriptions_from_graphs, PreprocessedGraphDataset, collate_fn
 )
 
-from train_gine_rerank_matryoshka import (
+from strategy.strategy_4.train_gine_rerank_matryoshka import (
     MolGINE, MolGINE_Residual_Reranker, DEVICE, 
     TRAIN_GRAPHS, VAL_GRAPHS, TEST_GRAPHS,  # Added VAL_GRAPHS
     TRAIN_EMB_CSV, VAL_EMB_CSV,             # Added VAL_EMB_CSV
@@ -19,8 +19,8 @@ from train_gine_rerank_matryoshka import (
 # ==========================================
 # CONFIGURATION
 # ==========================================
-RETRIEVER_PATH = "./model_matryoshka_checkpoint.pt"
-RERANKER_PATH = "./model/reranker_best.pt"
+RETRIEVER_PATH = "models/model_strategy_3.pt"
+RERANKER_PATH = "models/model_strategy_4.pt"
 
 TOP_K = 50           
 DIM_RETRIEVAL = 256  
@@ -120,7 +120,7 @@ def main():
         # Full Merge
         combined_emb = {**train_emb, **val_emb}
         n_test_samples = None
-        output_csv = "submission.csv"
+        output_csv = "results/strategy_4_test_descriptions.csv"
 
     print("Loading Descriptions (Train + Val)...")
     train_desc = load_descriptions_from_graphs(TRAIN_GRAPHS)

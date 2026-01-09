@@ -11,7 +11,7 @@ from torch_geometric.data import Batch
 from torch_geometric.nn import GCNConv, global_add_pool
 from torch_geometric.nn import GINEConv, global_add_pool
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb,
     PreprocessedGraphDataset, collate_fn,
     x_map, 
@@ -27,8 +27,8 @@ TRAIN_GRAPHS = "data/train_graphs.pkl"
 VAL_GRAPHS   = "data/validation_graphs.pkl"
 TEST_GRAPHS  = "data/test_graphs.pkl"
 
-TRAIN_EMB_CSV = "../train_scibert_embeddings.csv"
-VAL_EMB_CSV   = "../validation_scibert_embeddings.csv"
+TRAIN_EMB_CSV = "embeddings/train_scibert_embeddings.csv"
+VAL_EMB_CSV   = "embeddings/validation_scibert_embeddings.csv"
 
 # Training parameters
 BATCH_SIZE = 32
@@ -322,7 +322,7 @@ def main():
             best_model_weights = copy.deepcopy(mol_enc.state_dict())
             print(f"New best found! (Old copy deleted, New copy saved to RAM)")
 
-    model_path = "model_checkpoint.pt"
+    model_path = "models/model_strategy_2.pt"
     torch.save(mol_enc.state_dict(), model_path)
     print(f"\nModel saved to {model_path}")
     print(f"the final chose model has the following val score: ",val_scores)

@@ -93,6 +93,24 @@ At inference time, we perform a "Library Upgrade": we pass all training and vali
 **Results:**
 This approach successfully aligned the vector spaces, allowing the model to highlight relevant chemical terms in the descriptions while ignoring generic text. This yielded our significant breakthrough, achieving a score of **0.60162**.
 
+## Phase6: Domain-Specific Chemical Embeddings (ChEmbed)
+
+**1. The Problem:**
+While SciBERT was a significant upgrade over general English models, it remains a broad-spectrum scientific encoder. It understands "science" generally but lacks the high-resolution, specialized understanding of chemical nomenclature and the dense relationship between molecular descriptors and functional properties required for precise captioning. To achieve high semantic accuracy (BERTScore), the model needs a deeper grasp of chemical-specific tokens.
+
+
+**2. The Solution:**
+
+We replaced the Text Tower’s backbone with BASF-AI/ChEmbed-base:
+
+
+**Chemistry-Native:** Unlike SciBERT, this model is pre-trained specifically on chemical structures and specialized text, providing an embedding space that naturally aligns with the molecular graph domain.
+
+**Reduced Adapter Strain:** By starting with a more relevant text representation, our projection layers (the "adapters") required less transformation to map generic scientific text into our specific chemical vector space.
+
+
+**Enhanced Semantic Mapping:** This model better handles the "sequential, semantic structure" of natural language as it relates to chemistry, bridging the gap more effectively than general-purpose models.
+
 
 ## Future suggestions: 
 

@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb, load_descriptions_from_graphs, PreprocessedGraphDataset, collate_fn
 )
 
@@ -117,11 +117,11 @@ def main():
         train_emb = create_limited_emb_dict(full_train_emb, N_SAMPLES)
         n_test_samples = N_SAMPLES // 2  # Use fewer test samples
     else:
-        output_csv = "test_retrieved_descriptions.csv"
+        output_csv = "results/strategy_1_test_descriptions.csv"
         train_emb = load_id2emb(TRAIN_EMB_CSV)
         n_test_samples = None
     
-    model_path = "model_checkpoint.pt"
+    model_path = "./models/model_strategy_1.pt"
     if not os.path.exists(model_path):
         print(f"Error: Model checkpoint '{model_path}' not found.")
         print("Please train a model first using train_gcn.py")

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch_geometric.data import Batch
 from torch_geometric.nn import GINEConv, global_add_pool
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb,
     PreprocessedGraphDataset, collate_fn,
     x_map, 
@@ -24,8 +24,8 @@ TRAIN_GRAPHS = "./data/train_graphs.pkl"
 VAL_GRAPHS   = "./data/validation_graphs.pkl"
 TEST_GRAPHS  = "./data/test_graphs.pkl"
 
-TRAIN_EMB_CSV = "./train_scibert_embeddings.csv"
-VAL_EMB_CSV   = "./validation_scibert_embeddings.csv"
+TRAIN_EMB_CSV = "embeddings/train_scibert_embeddings.csv"
+VAL_EMB_CSV   = "embeddings/validation_scibert_embeddings.csv"
 
 BATCH_SIZE = 32
 EPOCHS = 20          
@@ -37,7 +37,7 @@ TEST_MODE = False
 N_SAMPLES = 1000
 
 TRAIN_RETRIEVER = False
-RETRIEVER_PATH = "./model_matryoshka_checkpoint.pt"
+RETRIEVER_PATH = "models/model_strategy_3.pt"
 
 # --- NEW: MATRYOSHKA CONFIG ---
 # We train the model to be accurate at ALL these dimensions simultaneously
@@ -461,7 +461,7 @@ def main():
         
         if val_scores.get("Hybrid_MRR", 0) > best_rerank_mrr:
             best_rerank_mrr = val_scores["Hybrid_MRR"]
-            torch.save(reranker.state_dict(), "reranker_best.pt")
+            torch.save(reranker.state_dict(), "models/model_strategy_4.pt")
 
 if __name__ == "__main__":
     main()

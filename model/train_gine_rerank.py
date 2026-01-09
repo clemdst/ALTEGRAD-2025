@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch_geometric.data import Batch
 from torch_geometric.nn import GINEConv, global_add_pool
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb,
     PreprocessedGraphDataset, collate_fn,
     x_map, 

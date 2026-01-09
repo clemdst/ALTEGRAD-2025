@@ -5,21 +5,14 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb, load_descriptions_from_graphs, PreprocessedGraphDataset, collate_fn
 )
 
-from train_gineconv_matroyshka import (
-    MolGINE, DEVICE, TRAIN_GRAPHS, TEST_GRAPHS, TRAIN_EMB_CSV, 
+from train_gineconv import (
+    MolGNN, DEVICE, TRAIN_GRAPHS, TEST_GRAPHS, TRAIN_EMB_CSV, 
     LimitedGraphDataset, TEST_MODE, N_SAMPLES
 )
-
-# ==========================================
-# MATRYOSHKA CONFIGURATION
-# ==========================================
-# Based on your evaluation, 256 is the optimal dimension.
-# Set to 768 to use full vectors, or 64 for speed.
-RETRIEVAL_DIM = 256
 
 
 def create_limited_emb_dict(full_emb_dict, n_samples):
@@ -33,30 +26,27 @@ def create_limited_emb_dict(full_emb_dict, n_samples):
 
 
 @torch.no_grad()
-def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, output_csv, test_mode=False, n_test_samples=None, dim=256):
+def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, output_csv, test_mode=False, n_test_samples=None):
     """
     Args:
-        dim: The Matryoshka dimension to use (e.g., 256).
+        model: Trained GNN model
+        train_data: Path to train preprocessed graphs
+        test_data: Path to test preprocessed graphs
+        train_emb_dict: Dictionary mapping train IDs to text embeddings
+        device: Device to run on
+        output_csv: Path to save retrieved descriptions
+        test_mode: Whether to limit the number of test samples
+        n_test_samples: Number of test samples to process (if test_mode=True)
     """
-    print(f"Retrieving using Matryoshka Dimension: {dim}")
-
     train_id2desc = load_descriptions_from_graphs(train_data)
     
     train_ids = list(train_emb_dict.keys())
-    # Stack all candidate embeddings
     train_embs = torch.stack([train_emb_dict[id_] for id_ in train_ids]).to(device)
+    train_embs = F.normalize(train_embs, dim=-1)
     
-    # --- MATRYOSHKA STEP 1: Slice Candidate Vectors ---
-    if dim is not None and dim < train_embs.size(1):
-        train_embs = train_embs[:, :dim]
+    print(f"Train set size: {len(train_ids)}")
     
-    # --- MATRYOSHKA STEP 2: Normalize AFTER Slicing ---
-    # This is critical. A sliced vector is not normalized by default.
-    train_embs = F.normalize(train_embs, p=2, dim=-1)
-    
-    print(f"Train set size: {len(train_ids)} | Vector Dim: {train_embs.shape[1]}")
-    
-    # Create test dataset
+    # Create test dataset (with potential limitation)
     full_test_ds = PreprocessedGraphDataset(test_data)
     
     if test_mode and n_test_samples is not None:
@@ -70,27 +60,16 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
     
     test_mol_embs = []
     test_ids_ordered = []
-    
-    print("Encoding test molecules...")
     for graphs in test_dl:
         graphs = graphs.to(device)
-        
-        # Get RAW output from model (un-normalized)
-        raw_output = model(graphs)
-        
-        # --- MATRYOSHKA STEP 3: Slice & Normalize Test Vectors ---
-        if dim is not None and dim < raw_output.size(1):
-            raw_output = raw_output[:, :dim]
-            
-        mol_emb = F.normalize(raw_output, p=2, dim=-1)
-        
+        mol_emb = model(graphs)
         test_mol_embs.append(mol_emb)
-        
-        # Track IDs
         batch_size = graphs.num_graphs
         start_idx = len(test_ids_ordered)
         
+        # Get IDs from the limited dataset
         if test_mode and n_test_samples is not None:
+            # For limited dataset, get IDs from the underlying full dataset
             end_idx = min(start_idx + batch_size, len(test_ds))
             for j in range(start_idx, end_idx):
                 test_ids_ordered.append(test_ds.dataset.ids[j])
@@ -100,7 +79,6 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
     test_mol_embs = torch.cat(test_mol_embs, dim=0)
     print(f"Encoded {test_mol_embs.size(0)} test molecules")
     
-    # Calculate Similarity (Cosine Similarity since vectors are normalized)
     similarities = test_mol_embs @ train_embs.t()
     
     most_similar_indices = similarities.argmax(dim=-1).cpu()
@@ -116,9 +94,9 @@ def retrieve_descriptions(model, train_data, test_data, train_emb_dict, device, 
             'description': retrieved_desc
         })
         
-        if i < 3:
-            print(f"\nTest ID {test_id} -> Train ID {retrieved_train_id}")
-            print(f"Desc: {retrieved_desc[:100]}...")
+        if i < 5:
+            print(f"\nTest ID {test_id}: Retrieved from train ID {retrieved_train_id}")
+            print(f"Description: {retrieved_desc[:150]}...")
     
     results_df = pd.DataFrame(results)
     results_df.to_csv(output_csv, index=False)
@@ -134,15 +112,16 @@ def main():
     if TEST_MODE:
         print(f"Running in TEST MODE with {N_SAMPLES} samples")
         output_csv = f"test_retrieved_descriptions_limited_{N_SAMPLES}.csv"
+        # Use limited embeddings for train set too
         full_train_emb = load_id2emb(TRAIN_EMB_CSV)
         train_emb = create_limited_emb_dict(full_train_emb, N_SAMPLES)
-        n_test_samples = N_SAMPLES // 2 
+        n_test_samples = N_SAMPLES // 2  # Use fewer test samples
     else:
         output_csv = "test_retrieved_descriptions.csv"
         train_emb = load_id2emb(TRAIN_EMB_CSV)
         n_test_samples = None
     
-    model_path = "model_matryoshka_checkpoint.pt"
+    model_path = "model_checkpoint.pt"
     if not os.path.exists(model_path):
         print(f"Error: Model checkpoint '{model_path}' not found.")
         print("Please train a model first using train_gcn.py")
@@ -154,9 +133,7 @@ def main():
     
     emb_dim = len(next(iter(train_emb.values())))
     
-    # Initialize model with the FULL dimension (e.g., 768)
-    # We slice the OUTPUT, not the architecture.
-    model = MolGINE(out_dim=emb_dim).to(DEVICE)
+    model = MolGNN(out_dim=emb_dim).to(DEVICE)
     print(f"Loading model from {model_path}")
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.eval()
@@ -169,8 +146,7 @@ def main():
         device=DEVICE,
         output_csv=output_csv,
         test_mode=TEST_MODE,
-        n_test_samples=n_test_samples,
-        dim=RETRIEVAL_DIM  # <--- Use the 256 optimal dim
+        n_test_samples=n_test_samples
     )
 
 

@@ -5,13 +5,13 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data_utils import (
+from utils.data_utils import (
     load_id2emb, load_descriptions_from_graphs, 
     PreprocessedGraphDataset, collate_fn
 )
 
 # Import the model class and config from your training script
-from train_dual_tower import (
+from strategy.strategy_5.train_dual_tower import (
     MolTransformerDual, DEVICE, 
     TRAIN_GRAPHS, VAL_GRAPHS, TEST_GRAPHS,
     TRAIN_EMB_CSV, VAL_EMB_CSV, MODEL_PATH
@@ -20,7 +20,7 @@ from train_dual_tower import (
 # ==========================================
 # CONFIGURATION
 # ==========================================
-SUBMISSION_CSV = "submission_dual_tower.csv"
+SUBMISSION_CSV = "results/strategy_6_test_descriptions.csv"
 BATCH_SIZE = 32
 
 @torch.no_grad()
