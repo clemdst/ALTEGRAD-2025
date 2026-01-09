@@ -19,13 +19,13 @@ from data_utils import (
 # =========================================================
 # CONFIGURATION
 # =========================================================
-TRAIN_GRAPHS = "./kaggle/input/molecular-data/{split}_graphs.pkl"
-VAL_GRAPHS   = './kaggle/input/molecular-data/{split}_graphs.pkl' 
-TEST_GRAPHS  = './kaggle/input/molecular-data/{split}_graphs.pkl' 
+TRAIN_GRAPHS = '/kaggle/input/molecular-data/train_graphs.pkl'
+VAL_GRAPHS   = '/kaggle/input/molecular-data/validation_graphs.pkl' 
+TEST_GRAPHS  = '/kaggle/input/molecular-data/test_graphs.pkl' 
 
-# Using your specific SciBERT embeddings
-TRAIN_EMB_CSV = "./train_stacked_embeddings.csv"
-VAL_EMB_CSV   = "./val_stacked_embeddings.csv"
+# Using your specific embeddings
+TRAIN_EMB_CSV = "/kaggle/working/ALTEGRAD-2025/train_stacked_embeddings.csv" 
+VAL_EMB_CSV   = "/kaggle/working/ALTEGRAD-2025/validation_stacked_embeddings.csv"
 
 # Output Paths
 MODEL_PATH = "dual_tower_hard_neg.pt"
@@ -33,7 +33,7 @@ MODEL_PATH = "dual_tower_hard_neg.pt"
 # Training Settings
 # Set TRAIN_FULL_DATA = True for your FINAL run (uses Train + Val)
 # Set TRAIN_FULL_DATA = False to monitor validation score first
-TRAIN_FULL_DATA = False 
+TRAIN_FULL_DATA = True 
 
 BATCH_SIZE = 24       
 EPOCHS = 25           
@@ -61,7 +61,7 @@ class LearnableTemperature(nn.Module):
     Initialized at 0.07 and learned during training.
     Uses log-space to ensure temperature stays positive.
     """
-    def __init__(self, init_temp=0.07):
+    def __init__(self, init_temp=TEMPERATURE):
         super().__init__()
         # Store log(temperature) to ensure it stays positive
         self.log_temp = nn.Parameter(torch.log(torch.tensor(init_temp)))
