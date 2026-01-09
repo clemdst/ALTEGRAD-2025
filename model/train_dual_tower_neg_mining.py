@@ -396,7 +396,12 @@ def main():
     train_ds_raw = PreprocessedGraphDataset(TRAIN_GRAPHS, train_emb)
     val_ds_raw = PreprocessedGraphDataset(VAL_GRAPHS, val_emb) if val_emb else None
 
-    # 3. Setup DataLoaders
+    # 3. Detect embedding dimension from first sample
+    sample_emb = next(iter(train_emb.values()))
+    text_embedding_dim = sample_emb.shape[0]
+    print(f"Detected text embedding dimension: {text_embedding_dim}")
+    
+    # 4. Setup DataLoaders
     if TRAIN_FULL_DATA and val_ds_raw:
         # MERGE DATASETS (Train + Val) for final model
         full_dataset = ConcatDataset([train_ds_raw, val_ds_raw])
@@ -410,11 +415,11 @@ def main():
         print(f"Train samples: {len(train_ds_raw)}")
         if val_ds_raw: print(f"Val samples:   {len(val_ds_raw)}")
 
-    # 4. Model Setup
-    # Assumes embeddings are 768 dim (SciBERT)
+    # 5. Model Setup
+    # Use detected embedding dimension (768 for SciBERT, 3072 for stacked embeddings)
     model = MolTransformerDual(
         hidden=128, 
-        text_dim=768, 
+        text_dim=text_embedding_dim, 
         out_dim=768,
         use_cross_attn=USE_CROSS_ATTENTION
     ).to(DEVICE)
@@ -422,8 +427,9 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
     
     print(f"Cross-Modal Attention: {'Enabled' if USE_CROSS_ATTENTION else 'Disabled'}")
+    print(f"Model text_dim: {text_embedding_dim} → out_dim: 768")
     
-    # 5. Training Loop
+    # 6. Training Loop
     best_mrr = 0.0
     
     print(f"\n--- Starting Dual Tower Training ({EPOCHS} Epochs) ---")
