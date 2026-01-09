@@ -14,13 +14,14 @@ from data_utils import (
 from train_dual_tower_neg_mining import (
     MolTransformerDual, DEVICE, 
     TRAIN_GRAPHS, VAL_GRAPHS, TEST_GRAPHS,
-    TRAIN_EMB_CSV, VAL_EMB_CSV, MODEL_PATH
+    TRAIN_EMB_CSV, VAL_EMB_CSV
 )
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
-SUBMISSION_CSV = "submission_dual_tower_hard_neg.csv"
+MODEL_PATH = "dual_tower_hard_neg.pt"
+SUBMISSION_CSV = "submission_dual_tower_hard_neg_V1.csv"
 BATCH_SIZE = 32
 
 @torch.no_grad()
