@@ -27,18 +27,7 @@ BATCH_SIZE = 32
 def generate_submission():
     print(f"Device: {DEVICE}")
     
-    # 1. LOAD MODEL
-    print(f"Loading model from {MODEL_PATH}...")
-    if not os.path.exists(MODEL_PATH):
-        print("Error: Model file not found. Run training first.")
-        return
-
-    # Initialize model structure (must match training exactly)
-    model = MolTransformerDual(hidden=128, text_dim=768, out_dim=768).to(DEVICE)
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
-    model.eval()
-
-    # 2. PREPARE TEXT LIBRARY (TRAIN + VAL)
+    # 1. LOAD TEXT EMBEDDINGS FIRST (to detect dimension)
     print("Loading Text Embeddings (Train + Val)...")
     train_emb = load_id2emb(TRAIN_EMB_CSV)
     val_emb = load_id2emb(VAL_EMB_CSV) if os.path.exists(VAL_EMB_CSV) else {}
@@ -47,14 +36,36 @@ def generate_submission():
     full_emb_dict = {**train_emb, **val_emb}
     candidate_ids = list(full_emb_dict.keys())
     print(f"Total Candidate Descriptions: {len(candidate_ids)}")
+    
+    # Detect embedding dimension from first sample
+    sample_emb = next(iter(full_emb_dict.values()))
+    text_embedding_dim = sample_emb.shape[0]
+    print(f"Detected text embedding dimension: {text_embedding_dim}")
+    
+    # 2. LOAD MODEL
+    print(f"Loading model from {MODEL_PATH}...")
+    if not os.path.exists(MODEL_PATH):
+        print("Error: Model file not found. Run training first.")
+        return
 
-    # Load Actual Descriptions (for the CSV output)
+    # Initialize model structure with correct text_dim (must match training exactly)
+    model = MolTransformerDual(
+        hidden=128, 
+        text_dim=text_embedding_dim,  # Use detected dimension
+        out_dim=768,
+        use_cross_attn=True  # Match training configuration
+    ).to(DEVICE)
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+    model.eval()
+    print(f"Model loaded successfully (text_dim={text_embedding_dim} → out_dim=768)")
+
+    # 3. Load Actual Descriptions (for the CSV output)
     print("Loading Text Descriptions...")
     train_desc = load_descriptions_from_graphs(TRAIN_GRAPHS)
     val_desc = load_descriptions_from_graphs(VAL_GRAPHS) if os.path.exists(VAL_GRAPHS) else {}
     full_id2desc = {**train_desc, **val_desc}
 
-    # 3. LIBRARY UPGRADE (RE-EMBEDDING)
+    # 4. LIBRARY UPGRADE (RE-EMBEDDING)
     # We must project the raw SciBERT embeddings through the trained Text Tower
     print("Upgrading Text Library (Projecting to Shared Space)...")
     
@@ -78,7 +89,7 @@ def generate_submission():
     candidate_pool = torch.cat(candidate_pool_list, dim=0) # [Total_Cands, 768]
     print(f"Library Upgraded. Shape: {candidate_pool.size()}")
 
-    # 4. PROCESS TEST MOLECULES
+    # 5. PROCESS TEST MOLECULES
     print("Loading Test Graphs...")
     test_ds = PreprocessedGraphDataset(TEST_GRAPHS)
     test_dl = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn)
@@ -126,7 +137,7 @@ def generate_submission():
             })
             global_idx += 1
 
-    # 5. SAVE SUBMISSION
+    # 6. SAVE SUBMISSION
     df = pd.DataFrame(results)
     df.to_csv(SUBMISSION_CSV, index=False)
     print(f"\nSuccess! Submission saved to {SUBMISSION_CSV}")
