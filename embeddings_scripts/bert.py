@@ -58,7 +58,7 @@ for split in ['train', 'validation']:
         'ID': ids,
         'embedding': [','.join(map(str, emb)) for emb in embeddings]
     })
-    output_path = f'./embeddings/{split}_embeddings.csv'
+    output_path = f'./embeddings/{split}_bert_embeddings.csv'
     result.to_csv(output_path, index=False)
     print(f"Saved to {output_path}")
 

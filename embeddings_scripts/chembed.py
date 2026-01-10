@@ -13,7 +13,7 @@ import os
 # CONFIGURATION
 # ==============================
 # UPDATED: Switching to ChEmbed (State-of-the-Art for Chemical Text)
-MODEL_NAME = 'BASF-AI/ChEmbed-base' 
+MODEL_NAME = 'BASF-AI/ChEmbed-full' 
 
 # Config
 MAX_TOKEN_LENGTH = 512  # Increased to 512 to capture full descriptions
