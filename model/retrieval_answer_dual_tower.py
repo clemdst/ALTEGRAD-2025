@@ -53,8 +53,8 @@ def generate_submission():
     model = MolTransformerDual(
         hidden=128, 
         text_dim=text_embedding_dim,  # Use detected dimension
-        out_dim=768,
-        use_cross_attn=True  # Match training configuration
+        out_dim=768
+        #use_cross_attn=True  # Match training configuration
     ).to(DEVICE)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model.eval()
