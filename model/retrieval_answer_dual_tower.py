@@ -11,7 +11,7 @@ from data_utils import (
 )
 
 # Import the model class and config from your training script
-from train_dual_tower_neg_mining import (
+from train_dual_tower import (
     MolTransformerDual, DEVICE, 
     TRAIN_GRAPHS, VAL_GRAPHS, TEST_GRAPHS,
     TRAIN_EMB_CSV, VAL_EMB_CSV
