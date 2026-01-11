@@ -20,8 +20,8 @@ from train_dual_tower_neg_mining import (
 # ==========================================
 # CONFIGURATION
 # ==========================================
-MODEL_PATH = "dual_tower_hard_neg.pt"
-SUBMISSION_CSV = "submission_dual_tower_hard_neg_V1.csv"
+MODEL_PATH = "dual_tower_best_temp.pt"
+SUBMISSION_CSV = "submission_dual_tower_hard_best_temp_V1.csv"
 BATCH_SIZE = 32
 
 @torch.no_grad()
