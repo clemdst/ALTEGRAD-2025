@@ -13,7 +13,7 @@ import os
 # CONFIGURATION
 # ==============================
 # UPDATED: Switching to ChEmbed (State-of-the-Art for Chemical Text)
-MODEL_NAME = 'BASF-AI/ChEmbed-base' 
+MODEL_NAME = 'BASF-AI/ChEmbed-full' 
 
 # Config
 MAX_TOKEN_LENGTH = 512  # Increased to 512 to capture full descriptions
@@ -37,6 +37,43 @@ def mean_pooling(model_output, attention_mask):
     sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
     
     return sum_embeddings / sum_mask
+
+def attention_pooling(model_output, attention_mask):
+    """
+    Attention-Weighted Pooling
+    Uses attention weights from the last layer to pool token embeddings
+    Falls back to mean pooling if attention not available
+    """
+    token_embeddings = model_output.last_hidden_state  # [B, Seq, D]
+    
+    # Check if attention outputs are available
+    if hasattr(model_output, 'attentions') and model_output.attentions is not None and len(model_output.attentions) > 0:
+        # Get attention from last layer
+        last_attn = model_output.attentions[-1]  # [B, Heads, Seq, Seq]
+        
+        # Average across all attention heads
+        attn_weights = last_attn.mean(dim=1)  # [B, Seq, Seq]
+        
+        # Use attention to [CLS] token (first token) as importance scores
+        cls_attn = attn_weights[:, 0, :]  # [B, Seq]
+        
+        # Apply attention mask to ignore padding tokens
+        cls_attn = cls_attn * attention_mask.float()
+        
+        # Normalize attention weights
+        cls_attn_sum = cls_attn.sum(dim=1, keepdim=True)
+        cls_attn = cls_attn / (cls_attn_sum + 1e-9)
+        
+        # Apply attention weights to token embeddings
+        cls_attn = cls_attn.unsqueeze(-1)  # [B, Seq, 1]
+        weighted_embeddings = (token_embeddings * cls_attn).sum(dim=1)  # [B, D]
+        
+        return weighted_embeddings
+    else:
+        # Fallback to mean pooling if attention not available
+        return mean_pooling(model_output, attention_mask)
+    
+
 
 def main():
     print(f"Loading Model: {MODEL_NAME}...")
@@ -99,7 +136,7 @@ def main():
                 model_output = model(**inputs)
 
             # Mean Pooling
-            embeddings = mean_pooling(model_output, inputs['attention_mask'])
+            embeddings = (mean_pooling(model_output, inputs['attention_mask']) + attention_pooling(model_output, inputs['attention_mask'])) / 2
             
             # Move to CPU for saving
             embeddings = embeddings.cpu().numpy()

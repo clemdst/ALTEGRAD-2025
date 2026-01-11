@@ -19,16 +19,16 @@ from data_utils import (
 # =========================================================
 # CONFIGURATION
 # =========================================================
-TRAIN_GRAPHS = "./data/train_graphs.pkl"
-VAL_GRAPHS   = "./data/validation_graphs.pkl"
-TEST_GRAPHS  = "./data/test_graphs.pkl"
+TRAIN_GRAPHS = '/kaggle/input/molecular-data/train_graphs.pkl'
+VAL_GRAPHS   = '/kaggle/input/molecular-data/validation_graphs.pkl' 
+TEST_GRAPHS  = '/kaggle/input/molecular-data/test_graphs.pkl' 
 
-# Using your specific SciBERT embeddings
-TRAIN_EMB_CSV = "./train_scibert_embeddings.csv"
-VAL_EMB_CSV   = "./validation_scibert_embeddings.csv"
+# Using your specific embeddings
+TRAIN_EMB_CSV = "/kaggle/working/ALTEGRAD-2025/train_chembed_embeddings.csv" 
+VAL_EMB_CSV   = "/kaggle/working/ALTEGRAD-2025/validation_chembed_embeddings.csv"
 
 # Output Paths
-MODEL_PATH = "dual_tower_best.pt"
+MODEL_PATH = "dual_tower_best_temp.pt"
 
 # Training Settings
 # Set TRAIN_FULL_DATA = True for your FINAL run (uses Train + Val)
@@ -36,14 +36,34 @@ MODEL_PATH = "dual_tower_best.pt"
 TRAIN_FULL_DATA = False 
 
 BATCH_SIZE = 24       
-EPOCHS = 25           
+EPOCHS = 15           
 LR = 2e-4             
 WEIGHT_DECAY = 1e-4
+TEMPERATURE = 0.05    # Initial temperature for contrastive learning
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # =========================================================
 # THE DUAL TOWER MODEL
 # =========================================================
+class LearnableTemperature(nn.Module):
+    """
+    Learnable temperature parameter for contrastive learning.
+    Initialized at 0.07 and learned during training.
+    Uses log-space to ensure temperature stays positive.
+    """
+    def __init__(self, init_temp=TEMPERATURE):
+        super().__init__()
+        # Store log(temperature) to ensure it stays positive
+        self.log_temp = nn.Parameter(torch.log(torch.tensor(init_temp)))
+    
+    def forward(self):
+        # Return exp(log_temp) to get actual temperature
+        return torch.exp(self.log_temp)
+    
+    def get_temperature(self):
+        """Get current temperature value"""
+        return self.forward().item()
+    
 class MolTransformerDual(nn.Module):
     def __init__(self, hidden=128, text_dim=768, out_dim=768, layers=3, heads=4):
         super().__init__()
@@ -81,6 +101,9 @@ class MolTransformerDual(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(text_dim, out_dim)
         )
+
+        self.temperature = LearnableTemperature(init_temp=TEMPERATURE)
+
         
         # Init text projection close to identity to start stable
         nn.init.eye_(self.text_proj[0].weight)
@@ -124,8 +147,9 @@ def train_epoch(model, loader, optimizer, device):
         # 1. Forward both towers
         g_vec, t_vec = model(graphs, text_emb)
         
-        # 2. Symmetric Contrastive Loss
-        logits = (g_vec @ t_vec.T) / 0.07
+        # 2. Symmetric Contrastive Loss (with learnable temperature)
+        temperature = model.temperature()
+        logits = (g_vec @ t_vec.T) / temperature
         labels = torch.arange(logits.size(0)).to(device)
         loss = (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2
         
@@ -210,7 +234,8 @@ def main():
         # Validation Logic
         if val_loader:
             val_scores = eval_retrieval(val_loader, model, DEVICE)
-            print(f"Epoch {ep+1}/{EPOCHS} | Loss: {loss:.4f} | MRR: {val_scores.get('MRR', 0):.4f}")
+            temp_val = model.temperature.get_temperature()
+            print(f"Epoch {ep+1}/{EPOCHS} | Loss: {loss:.4f} | MRR: {val_scores.get('MRR', 0):.4f} | Temp: {temp_val:.4f}")
             
             # Save Best Model
             if val_scores.get('MRR', 0) > best_mrr:
@@ -219,7 +244,8 @@ def main():
                 print(f"  >>> New Best Model Saved (MRR: {best_mrr:.4f})")
         else:
             # Blind Training (Full Data) - Just save the latest
-            print(f"Epoch {ep+1}/{EPOCHS} | Loss: {loss:.4f}")
+            temp_val = model.temperature.get_temperature()
+            print(f"Epoch {ep+1}/{EPOCHS} | Loss: {loss:.4f} | Temp: {temp_val:.4f}")
             torch.save(model.state_dict(), MODEL_PATH)
             
         scheduler.step()
