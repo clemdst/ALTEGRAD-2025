@@ -78,8 +78,8 @@ def attention_pooling(model_output, attention_mask):
 def main():
     print(f"Loading Model: {MODEL_NAME}...")
     try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-        model = AutoModel.from_pretrained(MODEL_NAME)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME,  trust_remote_code=True)
+        model = AutoModel.from_pretrained(MODEL_NAME,  trust_remote_code=True)
     except Exception as e:
         print(f"Error loading {MODEL_NAME}. Please check internet connection or model name.")
         raise e
