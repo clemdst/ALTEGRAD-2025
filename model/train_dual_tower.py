@@ -36,10 +36,10 @@ MODEL_PATH = "dual_tower_best_temp.pt"
 TRAIN_FULL_DATA = False 
 
 BATCH_SIZE = 24       
-EPOCHS = 15           
+EPOCHS = 30           
 LR = 2e-4             
 WEIGHT_DECAY = 1e-4
-TEMPERATURE = 0.05    # Initial temperature for contrastive learning
+TEMPERATURE = 0.025    # Initial temperature for contrastive learning
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # =========================================================
