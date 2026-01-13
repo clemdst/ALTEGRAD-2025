@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from utils.data_utils import (
+from data_utils import (
     load_id2emb, load_descriptions_from_graphs, 
     PreprocessedGraphDataset, collate_fn
 )

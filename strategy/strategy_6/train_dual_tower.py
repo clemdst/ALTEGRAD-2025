@@ -10,7 +10,7 @@ from tqdm import tqdm
 from torch_geometric.data import Batch
 from torch_geometric.nn import TransformerConv, global_add_pool, global_mean_pool
 
-from utils.data_utils import (
+from data_utils import (
     load_id2emb, load_descriptions_from_graphs,
     PreprocessedGraphDataset, collate_fn,
     x_map, e_map
