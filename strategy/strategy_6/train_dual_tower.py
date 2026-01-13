@@ -28,14 +28,14 @@ TRAIN_EMB_CSV = "/kaggle/working/ALTEGRAD-2025/train_chembed_embeddings.csv"
 VAL_EMB_CSV   = "/kaggle/working/ALTEGRAD-2025/validation_chembed_embeddings.csv"
 
 # Output Paths
-MODEL_PATH = "initial_best_strategy.pt"
+MODEL_PATH = "initial_best_strategy_full.pt"
 # Training Settings
 # Set TRAIN_FULL_DATA = True for your FINAL run (uses Train + Val)
 # Set TRAIN_FULL_DATA = False to monitor validation score first
-TRAIN_FULL_DATA = False 
+TRAIN_FULL_DATA = True 
 
 BATCH_SIZE = 24       
-EPOCHS = 30           
+EPOCHS = 28           
 LR = 2e-4             
 WEIGHT_DECAY = 1e-4
 TEMPERATURE = 0.025

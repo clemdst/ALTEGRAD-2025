@@ -20,7 +20,7 @@ from train_dual_tower import (
 # ==========================================
 # CONFIGURATION
 # ==========================================
-SUBMISSION_CSV = "initial_best_results.csv"
+SUBMISSION_CSV = "initial_best_results_full.csv"
 BATCH_SIZE = 32
 
 @torch.no_grad()
