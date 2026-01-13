@@ -136,7 +136,7 @@ def main():
                 model_output = model(**inputs)
 
             # Mean Pooling
-            embeddings = (mean_pooling(model_output, inputs['attention_mask']) + attention_pooling(model_output, inputs['attention_mask'])) / 2
+            embeddings = mean_pooling(model_output, inputs['attention_mask'])
             
             # Move to CPU for saving
             embeddings = embeddings.cpu().numpy()
