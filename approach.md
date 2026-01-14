@@ -112,12 +112,84 @@ We replaced the Text Tower’s backbone with BASF-AI/ChEmbed-base:
 **Enhanced Semantic Mapping:** This model better handles the "sequential, semantic structure" of natural language as it relates to chemistry, bridging the gap more effectively than general-purpose models.
 
 
-## Future suggestions: 
+## Phase 7: Hard Negative Mining
 
-Implement Hard Negative Mining: Stop using random negatives. We should train the model on the "hardest" wrong answers—molecules that are structurally similar but have different descriptions—to force it to learn fine-grained chemical distinctions.
+**1. The Problem:**
+Previous training approaches used random negative sampling during contrastive learning. This meant the model was being trained to distinguish between very dissimilar molecules (e.g., a small drug molecule vs. a large protein), which is a relatively easy task. The model wasn't learning to make the fine-grained distinctions required for real-world retrieval.
 
-Upgrade to Domain-Specific Encoders: Replace the generic SciBERT with ChEmbed or MolT5. Starting with models pre-trained specifically on chemical reactions and SMILES syntax will give us a much stronger baseline than general scientific text.
+**2. The Solution:**
 
-Adopt "Late Interaction" (ColBERT-style): Move beyond compressing everything into a single vector. By matching individual atoms in the graph directly to relevant words in the description (e.g., matching a "chloro" group to the word "chlorine"), we can bypass the information bottleneck of our current dual-tower approach.
+We implemented a two-stage Hard Negative Mining strategy:
+
+**Stage 1 - Mining:**
+* Pre-computed molecular fingerprints (Morgan Fingerprints with radius=2) for all training molecules using RDKit
+* For each molecule, identified the top-50 most structurally similar molecules based on Tanimoto similarity
+* Stored these "hard negatives" in a pre-computed matrix (`hard_negatives.npy`)
+
+**Stage 2 - Training:**
+* Created a custom `HardNegativeSampler` that ensures each training batch contains structurally similar but semantically different molecule pairs
+* Instead of random negatives, each anchor molecule is paired with one of its top-50 similar molecules
+* Applied symmetric contrastive loss with temperature scaling (τ = 0.07)
+
+**3. Key Implementation Details:**
+* Robust molecule reconstruction with error handling for invalid molecular structures
+* Safe fallback to random sampling when hard negatives are unavailable
+* Continued using the Graph Transformer + ChEmbed architecture from Phase 6
+
+**4. Results:**
+This approach forced the model to learn subtle chemical distinctions (e.g., different functional groups, stereochemistry) rather than just gross structural differences. The hard negative mining improved the model's ability to discriminate between chemically similar molecules with different properties.
+
+---
+
+## Phase 8: Retrieval-Augmented Generation (RAG)
+
+**1. The Problem:**
+While retrieval models excel at finding similar molecules, they fundamentally rely on pre-existing descriptions in the training set. They cannot generate novel, precise descriptions for new molecules. Additionally, pure generation models struggle without context, often producing generic or hallucinated descriptions.
+
+**2. The Solution:**
+
+We implemented a **Retrieval-Augmented Generation (RAG)** pipeline that combines the strengths of both approaches:
+
+**Architecture Components:**
+
+1. **Graph Encoder (GINE with Graph Transformer):**
+   * Processes molecular graphs using the same architecture from Phase 6
+   * Converts molecules into dense graph representations
+   * Projects graph features to match T5 embedding space
+
+2. **Retrieval Manager:**
+   * Uses the trained dual-tower model from Phase 7 as a retriever
+   * For each test molecule, retrieves top-K (K=3) most similar training descriptions
+   * Provides these as "hints" to guide the generation process
+
+3. **Generator (MolT5-Small):**
+   * Fine-tuned T5 model specialized for molecular text (`laituan245/molt5-small`)
+   * Takes concatenated input: `[Hints from Retrieval | Graph Embeddings]`
+   * Generates natural language descriptions using beam search (beam_size=5)
+
+**Training Process:**
+* Teacher forcing with cross-entropy loss on target descriptions
+* Gradient clipping for stability
+* Exclude self-descriptions during training (using `exclude_self=True`)
+
+**3. Evaluation Metrics:**
+* **BLEU-4:** Measures n-gram overlap between generated and reference descriptions
+* **BERTScore:** Evaluates semantic similarity using contextual embeddings (more robust than BLEU)
+
+**4. Key Innovation:**
+This is a **hybrid approach** - it leverages the precision of retrieval (finding similar examples) while maintaining the flexibility of generation (producing tailored descriptions). The retrieved hints act as "chemical context" that grounds the generation process, reducing hallucinations while allowing for novel phrasing.
+
+**5. Results:**
+The RAG model demonstrated the ability to generate chemically accurate descriptions by combining structural understanding from the graph encoder with semantic guidance from retrieved examples. This represents a shift from pure retrieval to a more sophisticated generation paradigm.
+
+---
+
+## Future Suggestions: 
+
+Implement Late Interaction (ColBERT-style): Move beyond compressing everything into a single vector. By matching individual atoms in the graph directly to relevant words in the description (e.g., matching a "chloro" group to the word "chlorine"), we can bypass the information bottleneck of our current dual-tower approach.
+
+Multi-Task Learning: Train the model simultaneously on multiple related tasks (retrieval, generation, property prediction) to learn more robust molecular representations.
+
+Attention Visualization: Implement visualization tools to understand which atoms/substructures the model focuses on when generating specific description terms, enabling better interpretability and debugging.
 
 
