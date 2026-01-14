@@ -42,7 +42,7 @@ def main():
     print(f"Loading Model: {MODEL_NAME}...")
     try:
         tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-        model = AutoModel.from_pretrained(MODEL_NAME)
+        model = AutoModel.from_pretrained(MODEL_NAME,trust_remote_code=True)
     except Exception as e:
         print(f"Error loading {MODEL_NAME}. Please check internet connection or model name.")
         raise e
@@ -56,7 +56,7 @@ def main():
         print(f"\nProcessing {split} graphs...")
         
         # Load graphs
-        pkl_path = f'.data/{split}_graphs.pkl'
+        pkl_path = f'data/{split}_graphs.pkl'
         if not os.path.exists(pkl_path):
             print(f"Warning: File not found {pkl_path}, skipping...")
             continue

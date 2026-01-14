@@ -7,3 +7,6 @@ rdkit>=2023.3.1
 nltk>=3.8.0
 bert-score 
 sacrebleu
+bitsandbytes 
+peft 
+accelerate

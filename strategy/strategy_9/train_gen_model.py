@@ -28,10 +28,10 @@ from strategy.strategy_6.train_dual_tower import MolTransformerDual
 # =========================================================
 TRAIN_GRAPHS  = "data/train_graphs.pkl"
 VAL_GRAPHS    = "data/validation_graphs.pkl"
-RETRIEVER_PATH = "models/model_strategy_6.pt" 
+RETRIEVER_PATH = "models/model_strategy_8.pt" 
 
 OUTPUT_DIR    = "models/"
-MODEL_PATH    = os.path.join(OUTPUT_DIR, "rag_generator_strategy_8.pt")
+MODEL_PATH    = os.path.join(OUTPUT_DIR, "models/model_strategy_9.pt")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 MOLT5_MODEL   = "laituan245/molt5-small"
