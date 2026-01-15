@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Sampler
 from torch_geometric.loader import DataLoader as PyGDataLoader
 from tqdm import tqdm
-from .mol_transformer_dual import MolTransformerDual, colbert_score
+from mol_transformer_dual import MolTransformerDual, colbert_score
 
 from utils.data_utils import (
     load_id2emb, load_id2emb_colbert, PreprocessedGraphDataset, collate_fn, x_map, e_map
