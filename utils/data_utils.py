@@ -72,6 +72,34 @@ def load_id2emb(csv_path: str) -> Dict[str, torch.Tensor]:
     return id2emb
 
 
+def load_id2emb_colbert(csv_path: str, num_tokens: int = 32, hidden_dim: int = 768) -> Dict[str, torch.Tensor]:
+    """
+    Load precomputed ColBERT-style token embeddings from CSV file.
+    
+    Args:
+        csv_path: Path to CSV file with columns: ID, embedding
+                  where embedding is comma-separated floats (flattened token embeddings)
+        num_tokens: Number of tokens per embedding (default: 32)
+        hidden_dim: Hidden dimension of each token (default: 768 for ChEmbed)
+        
+    Returns:
+        Dictionary mapping ID (str) to token embedding tensor [num_tokens, hidden_dim]
+    """
+    df = pd.read_csv(csv_path)
+    id2emb = {}
+    for _, row in df.iterrows():
+        id_ = str(row["ID"])
+        emb_str = row["embedding"]
+        emb_vals = [float(x) for x in str(emb_str).split(',')]
+        
+        # Reshape flattened embedding to [num_tokens, hidden_dim]
+        emb_tensor = torch.tensor(emb_vals, dtype=torch.float32)
+        emb_tensor = emb_tensor.view(num_tokens, hidden_dim)
+        
+        id2emb[id_] = emb_tensor
+    return id2emb
+
+
 # =========================================================
 # Load descriptions from preprocessed graphs
 # =========================================================
