@@ -227,4 +227,4 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=25)
 
-    train_step_2(model, train_loader, val_loader, optimizer, scheduler, DEVICE, epochs=10)
+    train_step_2(model, train_loader, val_loader, optimizer, scheduler, DEVICE, epochs=50)
