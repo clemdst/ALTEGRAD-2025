@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Sampler
 from torch_geometric.loader import DataLoader as PyGDataLoader
 from tqdm import tqdm
-from strategy.strategy_10.mol_transformer_dual import MolTransformerDual, colbert_score
+from .mol_transformer_dual import MolTransformerDual, colbert_score
 
 from utils.data_utils import (
     load_id2emb, load_id2emb_colbert, PreprocessedGraphDataset, collate_fn, x_map, e_map
@@ -152,7 +152,7 @@ def train_step_2(model, train_loader, val_loader, optimizer, scheduler, device, 
         # Save the best model based on validation performance [cite: 21, 29]
         if mrr > best_mrr:
             best_mrr = mrr
-            torch.save(model.state_dict(), "models/model_colbert.pt")
+            torch.save(model.state_dict(), "model_colbert.pt")
             print(f"  >>> New Best MRR: {best_mrr:.4f}! Model Saved.")
         
         scheduler.step()
@@ -167,12 +167,12 @@ if __name__ == "__main__":
     if USE_COLBERT_EMBEDDINGS:
         print("Loading ColBERT token embeddings...")
         train_emb = load_id2emb_colbert(
-            "train_chembed_colbert_embeddings.csv",
+            "/kaggle/working/ALTEGRAD-2025/train_chembed_colbert_embeddings.csv",
             num_tokens=NUM_TOKENS,
             hidden_dim=HIDDEN_DIM_EMB
         )
         val_emb = load_id2emb_colbert(
-            "validation_chembed_colbert_embeddings.csv",
+            "/kaggle/working/ALTEGRAD-2025/validation_chembed_colbert_embeddings.csv",
             num_tokens=NUM_TOKENS,
             hidden_dim=HIDDEN_DIM_EMB
         )
@@ -182,8 +182,8 @@ if __name__ == "__main__":
         print(f"  → Text input dimension: {text_input_dim}")
     else:
         print("Loading traditional mean-pooled embeddings...")
-        train_emb = load_id2emb("train_chembed_embeddings.csv")
-        val_emb = load_id2emb("validation_chembed_embeddings.csv")
+        train_emb = load_id2emb("/kaggle/working/ALTEGRAD-2025/train_chembed_embeddings.csv")
+        val_emb = load_id2emb("/kaggle/working/ALTEGRAD-2025/validation_chembed_embeddings.csv")
         text_input_dim = HIDDEN_DIM_EMB  # Single vector
         print(f"  → Text input dimension: {text_input_dim}")
     
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     val_ds = PreprocessedGraphDataset("/kaggle/input/molecular-data/validation_graphs.pkl", val_emb)
 
     # Initialize Hard Negative Sampler using results from Step 1
-    sampler = HardNegativeSampler(train_ds, batch_size=24, hard_neg_path="hard_negatives_colbert.npy")
+    sampler = HardNegativeSampler(train_ds, batch_size=24, hard_neg_path="/kaggle/working/ALTEGRAD-2025/hard_negatives_colbert.npy")
     train_loader = PyGDataLoader(train_ds, batch_sampler=sampler, collate_fn=collate_fn)
     val_loader = PyGDataLoader(val_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
 
