@@ -22,10 +22,11 @@ def colbert_score(graph_tokens, text_tokens, graph_mask=None):
     Returns:
         scores: [batch_size, batch_size] similarity matrix
     """
-    # Vectorized computation: [batch_text, num_text, dim] @ [batch_graph, dim, num_graph]
-    # Using einsum for clarity: 'btd,bgd->btbg'
-    # bt = batch_text, bg = batch_graph, d = dim, t = num_text_tokens, g = num_graph_tokens
-    scores = torch.einsum('btd,bgd->btbg', text_tokens, graph_tokens)
+    # Vectorized computation using einsum
+    # i = batch_text, j = batch_graph, t = num_text_tokens, g = num_graph_tokens, d = dim
+    # text_tokens: [i, t, d], graph_tokens: [j, g, d]
+    # Result: [i, j, t, g] = similarity between each text token and each graph token
+    scores = torch.einsum('itd,jgd->ijtg', text_tokens, graph_tokens)
     # Result: [batch_text, batch_graph, num_text_tokens, num_graph_tokens]
     
     # Apply mask to graph tokens if provided (mask padding)

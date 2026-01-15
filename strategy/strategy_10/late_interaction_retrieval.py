@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 # Ensure these utilities are available in your path
 from utils.data_utils import (
-    load_id2emb, load_descriptions_from_graphs, 
+    load_id2emb, load_id2emb_colbert, load_descriptions_from_graphs, 
     PreprocessedGraphDataset, collate_fn
 )
 
@@ -22,14 +22,14 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # Model Parameters
 MODEL_PATH = "/kaggle/working/ALTEGRAD-2025/model_colbert.pt"  
 HIDDEN_DIM = 128
-TEXT_DIM = 768
-OUT_DIM = 128  # Smaller for ColBERT tokens
+TEXT_DIM = 32 * 768  # ✅ Flattened ColBERT tokens (32 tokens × 768 dim)
+OUT_DIM = 256  # ✅ Optimized dimension (same as training)
 USE_COLBERT = True
 NUM_TEXT_TOKENS = 32
 
-# Data Paths - Use mean-pooled embeddings (model generates tokens internally)
-TRAIN_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/train_chembed_embeddings.csv"
-VAL_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/validation_chembed_embeddings.csv"
+# Data Paths - Using REAL ColBERT token embeddings
+TRAIN_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/train_chembed_colbert_embeddings.csv"
+VAL_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/validation_chembed_colbert_embeddings.csv"
 TRAIN_GRAPHS_PATH = "/kaggle/input/molecular-data/train_graphs.pkl"  
 VAL_GRAPHS_PATH = "/kaggle/input/molecular-data/validation_graphs.pkl"  
 TEST_GRAPHS_PATH = "/kaggle/input/molecular-data/test_graphs.pkl"  
@@ -38,7 +38,6 @@ TEST_GRAPHS_PATH = "/kaggle/input/molecular-data/test_graphs.pkl"
 SUBMISSION_CSV = "submission_colbert.csv"
 BATCH_SIZE = 32
 
-@torch.no_grad()
 @torch.no_grad()
 def generate_submission():
     print(f"Device: {DEVICE}")
@@ -60,9 +59,9 @@ def generate_submission():
     model.eval()
 
     # 2. PREPARE CANDIDATE LIBRARY (TRAIN + VAL)
-    print("Loading Text Embeddings (ChemBed)...")
-    train_emb = load_id2emb(TRAIN_EMB_PATH)
-    val_emb = load_id2emb(VAL_EMB_PATH) if os.path.exists(VAL_EMB_PATH) else {}
+    print("Loading Text Embeddings (ChemBed ColBERT Tokens)...")
+    train_emb = load_id2emb_colbert(TRAIN_EMB_PATH, num_tokens=NUM_TEXT_TOKENS, hidden_dim=768)
+    val_emb = load_id2emb_colbert(VAL_EMB_PATH, num_tokens=NUM_TEXT_TOKENS, hidden_dim=768) if os.path.exists(VAL_EMB_PATH) else {}
     
     full_emb_dict = {**train_emb, **val_emb}
     candidate_ids = list(full_emb_dict.keys())
@@ -75,7 +74,9 @@ def generate_submission():
 
     # 3. LIBRARY UPGRADE (ColBERT: Text Token Embeddings)
     print("Upgrading Text Library (Projecting to Shared Space with ColBERT)...")
-    all_raw_embs = torch.stack([full_emb_dict[id_] for id_ in candidate_ids])
+    # Each embedding is [num_tokens, 768] for ColBERT
+    # Flatten to [num_tokens * 768] for model input
+    all_raw_embs = torch.stack([full_emb_dict[id_].flatten() for id_ in candidate_ids])
     
     candidate_pool_list = []
     chunk_size = 1024
@@ -128,8 +129,8 @@ def generate_submission():
         
         # --- GRAPH ENCODING ---
         if USE_COLBERT:
-            mol_tokens = model.forward_graph(graphs, return_tokens=True)
-            # mol_tokens: [bs, max_nodes, out_dim]
+            mol_tokens, mol_mask = model.forward_graph(graphs, return_tokens=True)
+            # mol_tokens: [bs, max_nodes, out_dim], mol_mask: [bs, max_nodes]
             
             # --- SIMILARITY SEARCH with ColBERT (Corrected) ---
             batch_size_mol = mol_tokens.size(0)
