@@ -75,14 +75,27 @@ def evaluate_retrieval(model, loader, device):
     if model.use_colbert:
         # ColBERT evaluation: compute token embeddings and use MaxSim
         all_g_tokens, all_t_tokens = [], []
+        max_nodes = 0
+        
+        # First pass: collect tokens and find max number of nodes
         for graphs, text_emb in loader:
             graphs, text_emb = graphs.to(device), text_emb.to(device)
             g_tokens = model.forward_graph(graphs, return_tokens=True)
             t_tokens = model.forward_text(text_emb, return_tokens=True)
+            max_nodes = max(max_nodes, g_tokens.size(1))
             all_g_tokens.append(g_tokens)
             all_t_tokens.append(t_tokens)
         
-        all_g_tokens = torch.cat(all_g_tokens, 0)
+        # Pad graph tokens to same length
+        padded_g_tokens = []
+        for g_tok in all_g_tokens:
+            if g_tok.size(1) < max_nodes:
+                padding = torch.zeros(g_tok.size(0), max_nodes - g_tok.size(1), g_tok.size(2), 
+                                    device=g_tok.device, dtype=g_tok.dtype)
+                g_tok = torch.cat([g_tok, padding], dim=1)
+            padded_g_tokens.append(g_tok)
+        
+        all_g_tokens = torch.cat(padded_g_tokens, 0)
         all_t_tokens = torch.cat(all_t_tokens, 0)
         
         # Compute similarity using ColBERT scoring
