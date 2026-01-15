@@ -44,7 +44,7 @@ def colbert_score(graph_tokens, text_tokens, graph_mask=None):
     return final_scores
 
 class MolTransformerDual(nn.Module):
-    def __init__(self, hidden=128, text_dim=768, out_dim=128, layers=3, heads=4, 
+    def __init__(self, hidden=128, text_dim=768, out_dim=192, layers=3, heads=4, 
                  use_colbert=True, num_text_tokens=32):
         super().__init__()
         

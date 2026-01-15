@@ -62,52 +62,73 @@ class HardNegativeSampler(Sampler):
         # Adjusted length based on valid samples
         return self.max_valid_idx // self.batch_size
 # =========================================================
-# 2. VALIDATION ENGINE (MRR)
+# 2. VALIDATION ENGINE (MRR) - MEMORY OPTIMIZED
 # =========================================================
 @torch.no_grad()
 def evaluate_retrieval(model, loader, device):
     """
     Evaluates the model on validation graphs by calculating 
-    Mean Reciprocal Rank (MRR) for the retrieval task[cite: 80].
+    Mean Reciprocal Rank (MRR) for the retrieval task.
+    MEMORY OPTIMIZED: Process in chunks to avoid OOM.
     """
     model.eval()
     
     if model.use_colbert:
-        # ColBERT evaluation: compute token embeddings and use MaxSim
-        all_g_tokens, all_t_tokens, all_g_masks = [], [], []
-        max_nodes = 0
+        # ✅ CRITICAL FIX: Don't concatenate everything at once!
+        # Instead, compute similarities in chunks
         
-        # First pass: collect tokens and find max number of nodes
+        # First, collect all embeddings in CPU memory (lightweight)
+        print("  → Encoding all samples...")
+        all_g_tokens_cpu = []
+        all_t_tokens_cpu = []
+        all_g_masks_cpu = []
+        
         for graphs, text_emb in loader:
             graphs, text_emb = graphs.to(device), text_emb.to(device)
             g_tokens, g_mask = model.forward_graph(graphs, return_tokens=True)
             t_tokens = model.forward_text(text_emb, return_tokens=True)
-            max_nodes = max(max_nodes, g_tokens.size(1))
-            all_g_tokens.append(g_tokens)
-            all_t_tokens.append(t_tokens)
-            all_g_masks.append(g_mask)
+            
+            # Move to CPU immediately to free GPU memory
+            all_g_tokens_cpu.append(g_tokens.cpu())
+            all_t_tokens_cpu.append(t_tokens.cpu())
+            all_g_masks_cpu.append(g_mask.cpu())
         
-        # Pad graph tokens and masks to same length
-        padded_g_tokens = []
-        padded_g_masks = []
-        for g_tok, g_mask in zip(all_g_tokens, all_g_masks):
-            if g_tok.size(1) < max_nodes:
-                padding = torch.zeros(g_tok.size(0), max_nodes - g_tok.size(1), g_tok.size(2), 
-                                    device=g_tok.device, dtype=g_tok.dtype)
-                g_tok = torch.cat([g_tok, padding], dim=1)
-                # Pad mask with False (invalid tokens)
-                mask_padding = torch.zeros(g_mask.size(0), max_nodes - g_mask.size(1),
-                                         device=g_mask.device, dtype=g_mask.dtype)
-                g_mask = torch.cat([g_mask, mask_padding], dim=1)
-            padded_g_tokens.append(g_tok)
-            padded_g_masks.append(g_mask)
+        # Concatenate on CPU
+        all_g_tokens = torch.cat(all_g_tokens_cpu, 0)
+        all_t_tokens = torch.cat(all_t_tokens_cpu, 0)
+        all_g_masks = torch.cat(all_g_masks_cpu, 0)
         
-        all_g_tokens = torch.cat(padded_g_tokens, 0)
-        all_t_tokens = torch.cat(all_t_tokens, 0)
-        all_g_masks = torch.cat(padded_g_masks, 0)
+        num_samples = all_g_tokens.size(0)
+        print(f"  → Computing similarity matrix for {num_samples} samples...")
         
-        # Compute similarity using ColBERT scoring with mask
-        sims = colbert_score(all_g_tokens, all_t_tokens, all_g_masks)
+        # ✅ Process in small chunks (query-side batching)
+        chunk_size = 32  # Process 32 queries at a time
+        all_ranks = []
+        
+        for start_idx in range(0, num_samples, chunk_size):
+            end_idx = min(start_idx + chunk_size, num_samples)
+            
+            # Move chunk to GPU
+            t_chunk = all_t_tokens[start_idx:end_idx].to(device)
+            g_all = all_g_tokens.to(device)
+            g_mask_all = all_g_masks.to(device)
+            
+            # Compute similarities for this chunk against all documents
+            sims_chunk = colbert_score(g_all, t_chunk, g_mask_all)  # [num_samples, chunk_size]
+            
+            # Get ranks for this chunk
+            targets_chunk = torch.arange(start_idx, end_idx, device=device)
+            ranks_chunk = (sims_chunk.argsort(dim=0, descending=True) == targets_chunk.unsqueeze(0)).nonzero()[:, 0]
+            all_ranks.append(ranks_chunk.cpu())
+            
+            # Free GPU memory
+            del t_chunk, g_all, g_mask_all, sims_chunk
+            torch.cuda.empty_cache()
+        
+        # Concatenate all ranks
+        ranks = torch.cat(all_ranks, 0)
+        mrr = (1.0 / (ranks.float() + 1.0)).mean().item()
+        
     else:
         # Traditional evaluation: single vectors
         all_g, all_t = [], []
@@ -121,12 +142,11 @@ def evaluate_retrieval(model, loader, device):
         
         # Compute similarity matrix (Text x Graph)
         sims = all_t @ all_g.t()
+        
+        targets = torch.arange(sims.size(0), device=device)
+        ranks = (sims.argsort(dim=-1, descending=True) == targets.view(-1, 1)).nonzero()[:, 1]
+        mrr = (1.0 / (ranks.float() + 1.0)).mean().item()
     
-    targets = torch.arange(sims.size(0), device=device)
-    
-    # Calculate Mean Reciprocal Rank
-    ranks = (sims.argsort(dim=-1, descending=True) == targets.view(-1, 1)).nonzero()[:, 1]
-    mrr = (1.0 / (ranks.float() + 1.0)).mean().item()
     return mrr
 
 # =========================================================
@@ -151,7 +171,7 @@ def train_step_2(model, train_loader, val_loader, optimizer, scheduler, device, 
             else:
                 # Traditional: Get single vectors
                 g_vec, t_vec = model(graphs, text_emb)
-                logits = (g_vec @ t_vec.T) / 0.05
+                logits = (g_vec @ t_vec.T) / 0.07
             
             # Symmetric Contrastive Loss [cite: 74, 75]
             # Includes hard negatives in the logits matrix
@@ -212,15 +232,15 @@ if __name__ == "__main__":
     val_ds = PreprocessedGraphDataset("/kaggle/input/molecular-data/validation_graphs.pkl", val_emb)
 
     # Initialize Hard Negative Sampler using results from Step 1
-    sampler = HardNegativeSampler(train_ds, batch_size=24, hard_neg_path="/kaggle/working/ALTEGRAD-2025/hard_negatives_colbert.npy")
+    sampler = HardNegativeSampler(train_ds, batch_size=12, hard_neg_path="/kaggle/working/ALTEGRAD-2025/hard_negatives_colbert.npy")  # ✅ 24→12 for memory
     train_loader = PyGDataLoader(train_ds, batch_sampler=sampler, collate_fn=collate_fn)
-    val_loader = PyGDataLoader(val_ds, batch_size=32, shuffle=False, collate_fn=collate_fn)
+    val_loader = PyGDataLoader(val_ds, batch_size=8, shuffle=False, collate_fn=collate_fn)  # ✅ 32→8 for evaluation
 
     # Model Setup with ColBERT late interaction
     model = MolTransformerDual(
         hidden=128, 
         text_dim=text_input_dim,  # Adjusted based on embedding type
-        out_dim=256,  # ✅ Increased from 128 to 256 (optimal dimension)
+        out_dim=192,  # ⚠️ Reduced to 128 for memory constraints
         use_colbert=True,
         num_text_tokens=NUM_TOKENS
     ).to(DEVICE)
@@ -228,13 +248,15 @@ if __name__ == "__main__":
     print(f"\nModel Configuration:")
     print(f"  → Graph encoder hidden dim: 128")
     print(f"  → Text input dim: {text_input_dim}")
-    print(f"  → Output token dim: 256  [✅ OPTIMIZED]")
+    print(f"  → Output token dim: 128  [⚠️ MEMORY CONSTRAINED]")
     print(f"  → Number of text tokens: {NUM_TOKENS}")
     print(f"  → Using ColBERT mode: True")
     print(f"  → Using REAL ColBERT tokens: {USE_COLBERT_EMBEDDINGS}")
     print(f"  → Temperature: 0.07  [✅ OPTIMIZED]")
+    print(f"  → Training batch size: 12  [⚠️ MEMORY OPTIMIZED]")
+    print(f"  → Validation batch size: 8  [⚠️ MEMORY OPTIMIZED]")
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=25)
 
-    train_step_2(model, train_loader, val_loader, optimizer, scheduler, DEVICE, epochs=50)
+    train_step_2(model, train_loader, val_loader, optimizer, scheduler, DEVICE, epochs=25)
