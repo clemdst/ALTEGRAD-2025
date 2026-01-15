@@ -16,8 +16,8 @@ from utils.data_utils import (
 # =========================================================
 # CONFIGURATION
 # =========================================================
-# Set to True if using ColBERT token embeddings generated with chembed copy.py
-USE_COLBERT_EMBEDDINGS = False  # Set to True when using ColBERT-style embeddings
+# Set to True if using ColBERT token embeddings generated with chembed_colbert.py
+USE_COLBERT_EMBEDDINGS = True  # ✅ NOW USING REAL COLBERT TOKENS!
 NUM_TOKENS = 32
 HIDDEN_DIM_EMB = 768  # ChEmbed hidden dimension
 
@@ -74,32 +74,40 @@ def evaluate_retrieval(model, loader, device):
     
     if model.use_colbert:
         # ColBERT evaluation: compute token embeddings and use MaxSim
-        all_g_tokens, all_t_tokens = [], []
+        all_g_tokens, all_t_tokens, all_g_masks = [], [], []
         max_nodes = 0
         
         # First pass: collect tokens and find max number of nodes
         for graphs, text_emb in loader:
             graphs, text_emb = graphs.to(device), text_emb.to(device)
-            g_tokens = model.forward_graph(graphs, return_tokens=True)
+            g_tokens, g_mask = model.forward_graph(graphs, return_tokens=True)
             t_tokens = model.forward_text(text_emb, return_tokens=True)
             max_nodes = max(max_nodes, g_tokens.size(1))
             all_g_tokens.append(g_tokens)
             all_t_tokens.append(t_tokens)
+            all_g_masks.append(g_mask)
         
-        # Pad graph tokens to same length
+        # Pad graph tokens and masks to same length
         padded_g_tokens = []
-        for g_tok in all_g_tokens:
+        padded_g_masks = []
+        for g_tok, g_mask in zip(all_g_tokens, all_g_masks):
             if g_tok.size(1) < max_nodes:
                 padding = torch.zeros(g_tok.size(0), max_nodes - g_tok.size(1), g_tok.size(2), 
                                     device=g_tok.device, dtype=g_tok.dtype)
                 g_tok = torch.cat([g_tok, padding], dim=1)
+                # Pad mask with False (invalid tokens)
+                mask_padding = torch.zeros(g_mask.size(0), max_nodes - g_mask.size(1),
+                                         device=g_mask.device, dtype=g_mask.dtype)
+                g_mask = torch.cat([g_mask, mask_padding], dim=1)
             padded_g_tokens.append(g_tok)
+            padded_g_masks.append(g_mask)
         
         all_g_tokens = torch.cat(padded_g_tokens, 0)
         all_t_tokens = torch.cat(all_t_tokens, 0)
+        all_g_masks = torch.cat(padded_g_masks, 0)
         
-        # Compute similarity using ColBERT scoring
-        sims = colbert_score(all_g_tokens, all_t_tokens)
+        # Compute similarity using ColBERT scoring with mask
+        sims = colbert_score(all_g_tokens, all_t_tokens, all_g_masks)
     else:
         # Traditional evaluation: single vectors
         all_g, all_t = [], []
@@ -138,8 +146,8 @@ def train_step_2(model, train_loader, val_loader, optimizer, scheduler, device, 
             # Forward pass: Get normalized latent vectors or tokens [cite: 72, 73]
             if model.use_colbert:
                 # ColBERT: Get token embeddings and compute similarity
-                g_tokens, t_tokens = model(graphs, text_emb)
-                logits = colbert_score(g_tokens, t_tokens) / 0.05
+                g_tokens, t_tokens, g_mask = model(graphs, text_emb)
+                logits = colbert_score(g_tokens, t_tokens, g_mask) / 0.07  # ✅ Temperature: 0.05 → 0.07
             else:
                 # Traditional: Get single vectors
                 g_vec, t_vec = model(graphs, text_emb)
@@ -212,7 +220,7 @@ if __name__ == "__main__":
     model = MolTransformerDual(
         hidden=128, 
         text_dim=text_input_dim,  # Adjusted based on embedding type
-        out_dim=128,  # Smaller dimension for token embeddings
+        out_dim=256,  # ✅ Increased from 128 to 256 (optimal dimension)
         use_colbert=True,
         num_text_tokens=NUM_TOKENS
     ).to(DEVICE)
@@ -220,11 +228,13 @@ if __name__ == "__main__":
     print(f"\nModel Configuration:")
     print(f"  → Graph encoder hidden dim: 128")
     print(f"  → Text input dim: {text_input_dim}")
-    print(f"  → Output token dim: 128")
+    print(f"  → Output token dim: 256  [✅ OPTIMIZED]")
     print(f"  → Number of text tokens: {NUM_TOKENS}")
     print(f"  → Using ColBERT mode: True")
+    print(f"  → Using REAL ColBERT tokens: {USE_COLBERT_EMBEDDINGS}")
+    print(f"  → Temperature: 0.07  [✅ OPTIMIZED]")
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=25)
 
-    train_step_2(model, train_loader, val_loader, optimizer, scheduler, DEVICE, epochs=50)
+    train_step_2(model, train_loader, val_loader, optimizer, scheduler, DEVICE, epochs=25)

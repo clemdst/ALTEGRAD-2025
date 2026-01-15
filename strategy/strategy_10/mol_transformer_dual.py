@@ -10,36 +10,37 @@ from utils.data_utils import (
     x_map, e_map
 )
 
-def colbert_score(graph_tokens, text_tokens):
+def colbert_score(graph_tokens, text_tokens, graph_mask=None):
     """
-    ColBERT-style late interaction scoring using MaxSim.
+    ColBERT-style late interaction scoring using MaxSim (Optimized & Vectorized).
     For each query token, find max similarity with document tokens, then sum.
     
     Args:
         graph_tokens: [batch_size, num_graph_tokens, dim] - normalized
         text_tokens: [batch_size, num_text_tokens, dim] - normalized
+        graph_mask: [batch_size, num_graph_tokens] - Optional mask for padding (True = valid)
     Returns:
         scores: [batch_size, batch_size] similarity matrix
     """
-    batch_size = graph_tokens.size(0)
-    scores = torch.zeros(batch_size, batch_size, device=graph_tokens.device)
+    # Vectorized computation: [batch_text, num_text, dim] @ [batch_graph, dim, num_graph]
+    # Using einsum for clarity: 'btd,bgd->btbg'
+    # bt = batch_text, bg = batch_graph, d = dim, t = num_text_tokens, g = num_graph_tokens
+    scores = torch.einsum('btd,bgd->btbg', text_tokens, graph_tokens)
+    # Result: [batch_text, batch_graph, num_text_tokens, num_graph_tokens]
     
-    for i in range(batch_size):
-        # For each text query (i), compute score with all graph documents
-        text_query = text_tokens[i:i+1]  # [1, num_text_tokens, dim]
-        
-        # Compute similarity between this query's tokens and all documents' tokens
-        # [1, num_text_tokens, dim] @ [batch_size, dim, num_graph_tokens]
-        # -> [batch_size, num_text_tokens, num_graph_tokens]
-        sim = torch.matmul(text_query, graph_tokens.transpose(1, 2))  # [batch_size, num_text_tokens, num_graph_tokens]
-        
-        # MaxSim: for each query token, take max over document tokens
-        max_sim = sim.max(dim=-1)[0]  # [batch_size, num_text_tokens]
-        
-        # Sum across query tokens
-        scores[:, i] = max_sim.sum(dim=-1)  # [batch_size]
+    # Apply mask to graph tokens if provided (mask padding)
+    if graph_mask is not None:
+        # Expand mask: [batch_graph, num_graph_tokens] -> [1, batch_graph, 1, num_graph_tokens]
+        mask_expanded = graph_mask.unsqueeze(0).unsqueeze(2)
+        scores = scores.masked_fill(~mask_expanded, float('-inf'))
     
-    return scores.t()  # [batch_size, batch_size]
+    # MaxSim: for each text token, take max similarity over all graph tokens
+    max_scores = scores.max(dim=-1)[0]  # [batch_text, batch_graph, num_text_tokens]
+    
+    # Sum across text tokens to get final scores
+    final_scores = max_scores.sum(dim=-1)  # [batch_text, batch_graph]
+    
+    return final_scores
 
 class MolTransformerDual(nn.Module):
     def __init__(self, hidden=128, text_dim=768, out_dim=128, layers=3, heads=4, 
@@ -83,13 +84,28 @@ class MolTransformerDual(nn.Module):
 
         # --- TOWER B: TEXT ENCODER (The "Adapter") ---
         if use_colbert:
-            # ColBERT: Generate multiple text tokens from single embedding
-            self.text_token_generator = nn.Sequential(
-                nn.Linear(text_dim, hidden * 2),
-                nn.ReLU(),
-                nn.Dropout(0.1),
-                nn.Linear(hidden * 2, num_text_tokens * out_dim)
-            )
+            # ColBERT: Support both real ColBERT tokens and generated tokens
+            # If text_dim is already expanded (num_tokens * hidden), we have real tokens
+            # Otherwise, generate pseudo-tokens from mean-pooled embedding
+            if text_dim == num_text_tokens * 768:  # Real ColBERT tokens (flattened)
+                # Project each real token: [batch, num_tokens, 768] -> [batch, num_tokens, out_dim]
+                self.text_token_projector = nn.Sequential(
+                    nn.Linear(768, hidden),
+                    nn.ReLU(),
+                    nn.Dropout(0.1),
+                    nn.Linear(hidden, out_dim),
+                    nn.LayerNorm(out_dim)
+                )
+                self.using_real_tokens = True
+            else:
+                # Generate pseudo-tokens from mean-pooled embedding (fallback)
+                self.text_token_generator = nn.Sequential(
+                    nn.Linear(text_dim, hidden * 2),
+                    nn.ReLU(),
+                    nn.Dropout(0.1),
+                    nn.Linear(hidden * 2, num_text_tokens * out_dim)
+                )
+                self.using_real_tokens = False
         else:
             # Traditional: Project text embedding to single vector
             self.text_proj = nn.Sequential(
@@ -129,7 +145,7 @@ class MolTransformerDual(nn.Module):
             # Group by batch to get [batch_size, max_nodes, out_dim]
             from torch_geometric.utils import to_dense_batch
             tokens_dense, mask = to_dense_batch(tokens, batch.batch)
-            return tokens_dense  # [batch_size, max_nodes, out_dim]
+            return tokens_dense, mask  # Return mask for padding handling
         else:
             # Traditional: Pool to single vector
             g = global_add_pool(x, batch.batch) + global_mean_pool(x, batch.batch)
@@ -141,9 +157,30 @@ class MolTransformerDual(nn.Module):
             return_tokens = self.use_colbert
             
         if return_tokens:
-            # ColBERT: Generate multiple text tokens
-            tokens_flat = self.text_token_generator(text_emb)  # [batch_size, num_tokens * dim]
-            tokens = tokens_flat.view(-1, self.num_text_tokens, self.out_dim)  # [batch_size, num_tokens, dim]
+            # Check if we have real ColBERT tokens or need to generate pseudo-tokens
+            if text_emb.dim() == 3:
+                # Real ColBERT tokens: [batch_size, num_tokens, 768]
+                # Project each token independently
+                batch_size, num_tokens, token_dim = text_emb.shape
+                # Flatten for projection: [batch * num_tokens, token_dim]
+                tokens_flat = text_emb.reshape(-1, token_dim)
+                projected = self.text_token_projector(tokens_flat)
+                # Reshape back: [batch_size, num_tokens, out_dim]
+                tokens = projected.reshape(batch_size, num_tokens, self.out_dim)
+            elif hasattr(self, 'using_real_tokens') and self.using_real_tokens:
+                # Real tokens but flattened: [batch_size, num_tokens * 768]
+                batch_size = text_emb.size(0)
+                # Reshape to [batch_size, num_tokens, 768]
+                text_tokens = text_emb.view(batch_size, self.num_text_tokens, 768)
+                # Project each token
+                tokens_flat = text_tokens.reshape(-1, 768)
+                projected = self.text_token_projector(tokens_flat)
+                tokens = projected.reshape(batch_size, self.num_text_tokens, self.out_dim)
+            else:
+                # Generate pseudo-tokens from mean-pooled embedding (fallback)
+                tokens_flat = self.text_token_generator(text_emb)  # [batch_size, num_tokens * dim]
+                tokens = tokens_flat.view(-1, self.num_text_tokens, self.out_dim)  # [batch_size, num_tokens, dim]
+            
             tokens = F.normalize(tokens, p=2, dim=-1)
             return tokens
         else:
@@ -154,9 +191,9 @@ class MolTransformerDual(nn.Module):
         """Training Step: Return both vectors or tokens"""
         if self.use_colbert:
             # Return token-level embeddings
-            g_tokens = self.forward_graph(batch, return_tokens=True)
+            g_tokens, g_mask = self.forward_graph(batch, return_tokens=True)
             t_tokens = self.forward_text(text_emb, return_tokens=True)
-            return g_tokens, t_tokens
+            return g_tokens, t_tokens, g_mask
         else:
             # Return single vectors
             g_vec = F.normalize(self.forward_graph(batch, return_tokens=False), p=2, dim=-1)
@@ -166,8 +203,8 @@ class MolTransformerDual(nn.Module):
     def compute_similarity(self, batch, text_emb):
         """Compute similarity scores using appropriate method"""
         if self.use_colbert:
-            g_tokens, t_tokens = self.forward(batch, text_emb)
-            return colbert_score(g_tokens, t_tokens)
+            g_tokens, t_tokens, g_mask = self.forward(batch, text_emb)
+            return colbert_score(g_tokens, t_tokens, g_mask)
         else:
             g_vec, t_vec = self.forward(batch, text_emb)
             return g_vec @ t_vec.T
