@@ -131,29 +131,34 @@ def generate_submission():
             mol_tokens = model.forward_graph(graphs, return_tokens=True)
             # mol_tokens: [bs, max_nodes, out_dim]
             
-            # --- SIMILARITY SEARCH with ColBERT ---
-            # Compute MaxSim scores between each test molecule and all candidates
+            # --- SIMILARITY SEARCH with ColBERT (Corrected) ---
             batch_size_mol = mol_tokens.size(0)
             num_candidates = candidate_pool.size(0)
+            sim_matrix = torch.zeros(batch_size_mol, num_candidates, device=DEVICE)
             
-            # Process in smaller batches to avoid memory issues
-            sim_scores = []
+            # Process each molecule
             for mol_idx in range(batch_size_mol):
-                mol_single = mol_tokens[mol_idx:mol_idx+1]  # [1, max_nodes, out_dim]
+                mol_single = mol_tokens[mol_idx]  # [max_nodes, 128]
                 
-                # Compute similarity with all candidates
-                # [1, max_nodes, out_dim] @ [num_candidates, out_dim, num_text_tokens]
-                # -> [num_candidates, max_nodes, num_text_tokens]
-                sim = torch.matmul(mol_single, candidate_pool.transpose(1, 2))
+                # Reshape candidate_pool for matrix multiplication
+                # [num_candidates, num_text_tokens, 128] -> [num_candidates * num_text_tokens, 128]
+                candidate_flat = candidate_pool.view(-1, OUT_DIM)
                 
-                # MaxSim: for each molecule token, take max over text tokens
-                max_sim = sim.max(dim=-1)[0]  # [num_candidates, max_nodes]
+                # Compute similarities: [max_nodes, 128] @ [128, num_candidates * num_text_tokens]
+                # Result: [max_nodes, num_candidates * num_text_tokens]
+                all_sims = torch.matmul(mol_single, candidate_flat.T)
                 
-                # Sum across molecule tokens
-                scores = max_sim.sum(dim=-1)  # [num_candidates]
-                sim_scores.append(scores)
-            
-            sim_matrix = torch.stack(sim_scores, dim=0)  # [bs, num_candidates]
+                # Reshape: [max_nodes, num_candidates, num_text_tokens]
+                all_sims = all_sims.view(mol_single.size(0), num_candidates, NUM_TEXT_TOKENS)
+                
+                # MaxSim ColBERT: For each TEXT token, find max similarity with ANY molecule node
+                # Then sum across all text tokens
+                # [max_nodes, num_candidates, num_text_tokens] -> max over dim=0 -> [num_candidates, num_text_tokens]
+                max_per_text_token = all_sims.max(dim=0)[0]
+                
+                # Sum across text tokens: [num_candidates]
+                scores = max_per_text_token.sum(dim=-1)
+                sim_matrix[mol_idx] = scores
         else:
             mol_vec = model.forward_graph(graphs, return_tokens=False)
             mol_vec = F.normalize(mol_vec, p=2, dim=-1)
