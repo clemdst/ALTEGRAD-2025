@@ -87,16 +87,19 @@ def generate_submission():
             batch_raw = all_raw_embs[i:i+chunk_size].to(DEVICE)
             batch_tokens = model.forward_text(batch_raw, return_tokens=True)
             # batch_tokens: [chunk_size, num_text_tokens, out_dim]
-            candidate_pool_list.append(batch_tokens)
+            candidate_pool_list.append(batch_tokens.cpu())  # Move to CPU to save GPU memory
     else:
         for i in range(0, len(all_raw_embs), chunk_size):
             batch_raw = all_raw_embs[i:i+chunk_size].to(DEVICE)
             batch_projected = model.forward_text(batch_raw, return_tokens=False)
             batch_norm = F.normalize(batch_projected, p=2, dim=-1)
-            candidate_pool_list.append(batch_norm)
+            candidate_pool_list.append(batch_norm.cpu())  # Move to CPU to save GPU memory
     
-    candidate_pool = torch.cat(candidate_pool_list, dim=0) 
+    candidate_pool = torch.cat(candidate_pool_list, dim=0)
     print(f"Library Upgraded. Shape: {candidate_pool.size()}")
+    
+    # Clear GPU memory after processing all candidates
+    torch.cuda.empty_cache()
 
     # 4. PROCESS TEST MOLECULES
     print(f"Loading Test Graphs from {TEST_GRAPHS_PATH}...")
@@ -133,32 +136,31 @@ def generate_submission():
             # mol_tokens: [bs, max_nodes, out_dim], mol_mask: [bs, max_nodes]
             
             # --- SIMILARITY SEARCH with ColBERT ---
-            # Use colbert_score function for consistency with training
-            # candidate_pool: [num_candidates, num_text_tokens, out_dim]
-            # mol_tokens: [bs, max_nodes, out_dim]
-            # Need to compute score for each molecule vs all candidates
+            # candidate_pool: [num_candidates, num_text_tokens, out_dim] on CPU
+            # mol_tokens: [bs, max_nodes, out_dim] on GPU
+            # colbert_score expects: (text_tokens, graph_tokens, graph_mask)
+            # Returns: [batch_text, batch_graph] = [num_candidates, bs]
             
             batch_size_mol = mol_tokens.size(0)
             num_candidates = candidate_pool.size(0)
             sim_matrix = torch.zeros(batch_size_mol, num_candidates, device=DEVICE)
             
-            # Process each molecule individually to avoid OOM
-            for mol_idx in range(batch_size_mol):
-                # Get single molecule tokens: [1, max_nodes, out_dim]
-                mol_single = mol_tokens[mol_idx:mol_idx+1]
-                mask_single = mol_mask[mol_idx:mol_idx+1]
+            # Process candidates in batches to avoid OOM
+            candidate_batch_size = 512  # Process candidates in batches
+            
+            for cand_start in range(0, num_candidates, candidate_batch_size):
+                cand_end = min(cand_start + candidate_batch_size, num_candidates)
+                candidate_batch = candidate_pool[cand_start:cand_end].to(DEVICE)
                 
-                # Expand to match candidates: [num_candidates, max_nodes, out_dim]
-                mol_expanded = mol_single.expand(num_candidates, -1, -1)
-                mask_expanded = mask_single.expand(num_candidates, -1)
+                # Compute ColBERT scores for this batch of candidates vs all molecules
+                # candidate_batch: [batch_size_cand, num_text_tokens, out_dim]
+                # mol_tokens: [bs, max_nodes, out_dim]
+                # mol_mask: [bs, max_nodes]
+                # Result: [batch_size_cand, bs]
+                scores = colbert_score(candidate_batch, mol_tokens, mol_mask)
                 
-                # Compute ColBERT scores: [num_candidates, num_candidates]
-                # We only need the diagonal since mol is repeated for each candidate
-                scores_full = colbert_score(candidate_pool, mol_expanded, mask_expanded)
-                
-                # Extract diagonal (each candidate vs this molecule)
-                scores = torch.diag(scores_full)  # [num_candidates]
-                sim_matrix[mol_idx] = scores
+                # Transpose to get [bs, batch_size_cand] and store
+                sim_matrix[:, cand_start:cand_end] = scores.t()
         else:
             mol_vec = model.forward_graph(graphs, return_tokens=False)
             mol_vec = F.normalize(mol_vec, p=2, dim=-1)
