@@ -82,21 +82,41 @@ def evaluate_retrieval(model, loader, device):
         all_g_tokens_cpu = []
         all_t_tokens_cpu = []
         all_g_masks_cpu = []
+        max_nodes = 0
         
         for graphs, text_emb in loader:
             graphs, text_emb = graphs.to(device), text_emb.to(device)
             g_tokens, g_mask = model.forward_graph(graphs, return_tokens=True)
             t_tokens = model.forward_text(text_emb, return_tokens=True)
             
+            # Track max nodes for padding
+            max_nodes = max(max_nodes, g_tokens.size(1))
+            
             # Move to CPU immediately to free GPU memory
             all_g_tokens_cpu.append(g_tokens.cpu())
             all_t_tokens_cpu.append(t_tokens.cpu())
             all_g_masks_cpu.append(g_mask.cpu())
         
-        # Concatenate on CPU
-        all_g_tokens = torch.cat(all_g_tokens_cpu, 0)
+        # Pad graph tokens and masks to same length before concatenation
+        print(f"  → Padding to max_nodes={max_nodes}...")
+        padded_g_tokens = []
+        padded_g_masks = []
+        for g_tok, g_mask in zip(all_g_tokens_cpu, all_g_masks_cpu):
+            if g_tok.size(1) < max_nodes:
+                padding = torch.zeros(g_tok.size(0), max_nodes - g_tok.size(1), g_tok.size(2), 
+                                    device=g_tok.device, dtype=g_tok.dtype)
+                g_tok = torch.cat([g_tok, padding], dim=1)
+                # Pad mask with False (invalid tokens)
+                mask_padding = torch.zeros(g_mask.size(0), max_nodes - g_mask.size(1),
+                                         device=g_mask.device, dtype=g_mask.dtype)
+                g_mask = torch.cat([g_mask, mask_padding], dim=1)
+            padded_g_tokens.append(g_tok)
+            padded_g_masks.append(g_mask)
+        
+        # Concatenate on CPU after padding
+        all_g_tokens = torch.cat(padded_g_tokens, 0)
         all_t_tokens = torch.cat(all_t_tokens_cpu, 0)
-        all_g_masks = torch.cat(all_g_masks_cpu, 0)
+        all_g_masks = torch.cat(padded_g_masks, 0)
         
         num_samples = all_g_tokens.size(0)
         print(f"  → Computing similarity matrix for {num_samples} samples...")
