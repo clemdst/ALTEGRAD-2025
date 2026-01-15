@@ -1,192 +1,96 @@
-# Molecule-Text Retrieval
+# ALTEGRAD 2025: Molecular Graph Captioning
 
-Graph neural network for molecular graph and text description retrieval.
+This repository contains the implementation for the ALTEGRAD 2025 Data Challenge. The goal is to bridge the gap between molecular graphs and natural language by developing models that generate or retrieve precise text descriptions for chemical structures.
 
-## Installation
+## 📂 Project Structure
 
-```bash
-pip install -r requirements.txt
-```
-
-## Data Setup
-
-Place your preprocessed graph data files in the `data/` directory:
-- `train_graphs.pkl`
-- `validation_graphs.pkl`
-- `test_graphs.pkl`
-
-## Usage
-
-Run the following scripts in order:
-
-### 1. Inspect Graph Data
-
-Check the structure and contents of your graph files:
-
-```bash
-python inspect_graph_data.py
-```
-
-### 2. Generate Description Embeddings
-
-Create BERT embeddings for molecular descriptions:
-
-```bash
-python generate_description_embeddings.py
-```
-
-This generates:
-- `data/train_embeddings.csv`
-- `data/validation_embeddings.csv`
-
-### 3. Train GCN Model
-
-Train the graph neural network:
-
-```bash
-python train_gcn.py
-```
-
-This creates `model_checkpoint.pt`.
-
-### 4. Run Retrieval
-
-Retrieve descriptions for test molecules:
-
-```bash
-python retrieval_answer.py
-```
-
-This generates `test_retrieved_descriptions.csv` with retrieved descriptions for each test molecule.
-
-## Output
-
-- `model_checkpoint.pt`: Trained GCN model
-- `test_retrieved_descriptions.csv`: Retrieved descriptions for test set
-
-## Our different approachs
-
-# Project Update: Molecular Retrieval Model Improvements
-
-We improved our molecular retrieval model in two major phases. This document outlines the changes made to the architecture and data processing to increase retrieval accuracy.
-
-## Phase 1: Upgrading the "Vision" (GCN $\rightarrow$ GINE)
-
-Our first goal was to make the model actually understand chemistry, rather than just the geometric shape of the graph.
-
-### 1. The Problem (Old Model)
-* **Blind to Atoms:** The original GCN treated every node exactly the same. To the model, a Carbon atom and an Oxygen atom looked identical.
-* **Blind to Bonds:** It completely ignored the edges. It did not distinguish between single, double, or aromatic bonds.
-* **Result:** The model only saw the "skeleton" of the molecule but missed the chemical properties.
-
-### 2. The Solution (New Model)
-
-
-We switched to a **GINE (Graph Isomorphism Network with Edge features)** architecture:
-* **Atom Features:** We now provide specific inputs for every atom type. The model knows specifically what element each node is.
-* **Edge Features:** We now include bond attributes. The model understands how atoms are connected (single vs. double bonds).
-* **Better Training:** We switched from **MSE Loss** (forcing numbers to match) to **Contrastive Loss**. This teaches the model to look at a batch of descriptions and pick the *one* correct match for the graph.
-
-**Phase 1 Best Result (MRR):** 
-
-- *Validation Score:*  {'MRR': 0.3549558222293854}
-
-- *Public Score:* 0.52324
+* `data/`: Raw and preprocessed graph data (`train`, `val`, `test`).
+* `embeddings/`: Destination folder for generated node/graph embeddings.
+* `embeddings_scripts/`: Scripts to generate embeddings (e.g., GCN, BERT, ChemBERTa).
+* `strategy/`: Core logic for training generative models and running retrieval algorithms.
+* `models/`: Model architecture definitions.
+* `utils/`: Helper functions for data loading and evaluation.
+* `results/`: Output folder for predictions and submission files.
 
 ---
 
-## Phase 2: Upgrading the "Language" (SciBERT)
 
-Once the model could "see" the chemistry, we needed to ensure it understood the text descriptions correctly.
+## 🚀 Installation
+<details>
+<summary><strong> (Click to expand)</strong></summary>
+### 1. Clone the Repository
 
-### 1. The Problem
-We were using standard text embeddings trained on general English (Wikipedia, Books). These models often struggle with specific technical terms like "aromatic ring," "derivative," or "inhibitor."
+```bash
+git clone [https://github.com/your-username/ALTEGRAD-2025.git](https://github.com/your-username/ALTEGRAD-2025.git)
+cd ALTEGRAD-2025
+```
 
-### 2. The Solution
+### 2. Install Requirements
+Ensure you are using a Python environment (Python 3.8+ recommended). Install the necessary dependencies:
 
+```Bash
 
-We switched to **SciBERT**:
-* **Science-Native:** This model was trained on millions of scientific papers.
-* **Result:** It generates much smarter embeddings for our descriptions, giving the GNN a higher-quality target to learn from.
+pip install -r requirements.txt
 
-**Phase 2 Best Result (MRR):** 
+```
 
-- *Validation Score:*  {'MRR': 0.5981288552284241,}
+## ⚙️ Step 1: Generating Embeddings
+Before running any training or retrieval strategies, you must pre-compute the embeddings for the molecular graphs and text descriptions.
 
-- *Public Score:* 0.56304
-Here is a corrected and professional revision of your text, incorporating the technical details and results we discussed today.
-
-## Phase 3: The Matryoshka Representation Learning (MRL) Approach
-
-**Approach:**
-To improve retrieval efficiency and robustness, we implemented a Matryoshka Representation Learning strategy. Instead of training for a single fixed output dimension, this loss function forces the model to learn a hierarchical representation where the first  dimensions (e.g., 64, 128, 256) are independently capable of accurate retrieval. This allows us to "slice" the embedding vector at inference time to balance speed and accuracy.
-
-**Results:**
-The training yielded the following Best Scores:
-
-* **MRR@64:** 0.5235
-* **MRR@128:** 0.5748
-* **MRR@256:** 0.5996 (Peak)
-* **MRR@512:** 0.5867
-* **MRR@768:** 0.5970
-
-**Analysis:**
-The results clearly demonstrate that the "sweet spot" for our data lies at **256 dimensions**, where the model actually outperformed the full 768-dimensional vector (0.5996 vs 0.5970). This suggests that the intrinsic dimensionality of the chemical space is lower than the default SciBERT output. However, since our baseline models often operated near this dimensionality already, this phase primarily optimized efficiency rather than yielding a massive jump in raw performance.
-
-## Phase 4: Two-Stage Retrieval (Retrieve & Rerank)
-
-**Approach:**
-We constructed a pipeline consisting of two distinct stages:
-
-1. **Retriever:** We utilized the Matryoshka model (sliced to the optimal 256 dimensions) to rapidly retrieve the top-20 candidates.
-2. **Reranker:** We trained a specialized Residual Reranker (a lighter GNN with a cross-attention mechanism) to re-order these top-20 candidates based on a full-dimensional comparison.
-
-**Results:**
-Despite the theoretical advantage of reranking, we observed only a marginal improvement in our leaderboard score, moving from **0.56304** to **0.56776**.
-
-**Analysis:**
-This plateau indicated that our bottleneck was not the ranking logic, but the fundamental quality of the embeddings themselves. The static text embeddings were "upper-bounding" our performance; no amount of reranking could fix the fact that the graph and text vector spaces were not perfectly aligned. We concluded that we needed to fundamentally revise how we embed both modalities.
-
-## Phase 5: The Dual-Tower Graph Transformer (SOTA)
-
-**Approach:**
-To break the performance ceiling, we moved to a **Dual-Tower (Dual-Encoder)** architecture that trains both modalities jointly:
-
-1. **Graph Tower (The Upgrade):** We replaced the standard GINEConv with a **Graph Transformer**. Unlike GINE, which is limited to local neighborhoods, the Transformer uses self-attention with edge features, allowing it to capture global molecular structures and long-range dependencies between atoms.
-2. **Text Tower (The Adapter):** Instead of treating SciBERT embeddings as static "ground truth," we added a trainable MLP projection layer. This acts as an adapter, learning to map the generic scientific text into our specific chemical vector space.
-
-**Inference Mechanism:**
-At inference time, we perform a "Library Upgrade": we pass all training and validation descriptions through the trained Text Tower once to project them into the shared space. We then pass the test graphs through the Graph Tower and perform retrieval against this upgraded library.
-
-**Results:**
-This approach successfully aligned the vector spaces, allowing the model to highlight relevant chemical terms in the descriptions while ignoring generic text. This yielded our significant breakthrough, achieving a score of **0.60162**.
-
-## Phase6: Domain-Specific Chemical Embeddings (ChEmbed)
-
-**1. The Problem:**
-While SciBERT was a significant upgrade over general English models, it remains a broad-spectrum scientific encoder. It understands "science" generally but lacks the high-resolution, specialized understanding of chemical nomenclature and the dense relationship between molecular descriptors and functional properties required for precise captioning. To achieve high semantic accuracy (BERTScore), the model needs a deeper grasp of chemical-specific tokens.
+Navigate to the embedding generation scripts:
 
 
-**2. The Solution:**
+⚠️ Important: Hugging Face Clearance for chembed
+This project utilizes ChemBED (or similar gated models like ChemBERTa/MolT5) which requires authentication.
 
-We replaced the Text Tower’s backbone with BASF-AI/ChEmbed-base:
+Hugging Face Account: You must have a Hugging Face account.
 
+Model Clearance: Specific models are gated. Visit the model card on Hugging Face and accept the license terms to gain access.
 
-**Chemistry-Native:** Unlike SciBERT, this model is pre-trained specifically on chemical structures and specialized text, providing an embedding space that naturally aligns with the molecular graph domain.
+Authentication: Log in via your terminal using your access token:
 
-**Reduced Adapter Strain:** By starting with a more relevant text representation, our projection layers (the "adapters") required less transformation to map generic scientific text into our specific chemical vector space.
+```Bash
+cd embeddings_scripts
+huggingface-cli login
+```
+### Paste your User Access Token when prompted
+Running the Scripts
+Run the generation scripts to populate the embeddings/ directory.
 
+``` Bash
+# Example: Generate graph embeddings
+python generate_graph_embeddings.py
 
-**Enhanced Semantic Mapping:** This model better handles the "sequential, semantic structure" of natural language as it relates to chemistry, bridging the gap more effectively than general-purpose models.
+# Example: Generate text/chemical embeddings (requires HF login)
+python generate_chembed.py
+```
 
+## 🧠 Step 2: Running Strategies
+Once the embeddings are ready, you can execute the main strategies located in the strategy/ folder. This includes training generative models or running the baseline retrieval algorithms.
 
-## Future suggestions: 
+Train a Model
+To train a new model (e.g., a Graph-to-Text generator):
 
-Implement Hard Negative Mining: Stop using random negatives. We should train the model on the "hardest" wrong answers—molecules that are structurally similar but have different descriptions—to force it to learn fine-grained chemical distinctions.
+```Bash
+# Example command
+python strategy/train_generative.py
+```
 
-Upgrade to Domain-Specific Encoders: Replace the generic SciBERT with ChEmbed or MolT5. Starting with models pre-trained specifically on chemical reactions and SMILES syntax will give us a much stronger baseline than general scientific text.
+Run Retrieval Baseline
+To execute the embedding-similarity retrieval algorithm (matching test graphs to training captions):
 
-Adopt "Late Interaction" (ColBERT-style): Move beyond compressing everything into a single vector. By matching individual atoms in the graph directly to relevant words in the description (e.g., matching a "chloro" group to the word "chlorine"), we can bypass the information bottleneck of our current dual-tower approach.
+```Bash
+# Example command
+python strategy/run_retrieval.py
+```
 
+## 📊 Evaluation
 
+Results and predictions will be saved to the results/ directory. Formatting of the output files adheres to the Kaggle submission standards.
+</details>
 
+## 📄 Project Report
+
+You can view our detailed final report, including the analysis of the Generative Frontier and Cross-Modal Attention experiments, by clicking the link below:
+
+[**View Full Project Report (PDF)**](./ALTEGRAD_report.pdf)
