@@ -27,9 +27,9 @@ OUT_DIM = 128  # Smaller for ColBERT tokens
 USE_COLBERT = True
 NUM_TEXT_TOKENS = 32
 
-# Data Paths
-TRAIN_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/train_chembed_colbert_embeddings.csv"
-VAL_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/validation_chembed_colbert_embeddings.csv"
+# Data Paths - Use mean-pooled embeddings (model generates tokens internally)
+TRAIN_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/train_chembed_embeddings.csv"
+VAL_EMB_PATH = "/kaggle/working/ALTEGRAD-2025/validation_chembed_embeddings.csv"
 TRAIN_GRAPHS_PATH = "/kaggle/input/molecular-data/train_graphs.pkl"  
 VAL_GRAPHS_PATH = "/kaggle/input/molecular-data/validation_graphs.pkl"  
 TEST_GRAPHS_PATH = "/kaggle/input/molecular-data/test_graphs.pkl"  
