@@ -20,6 +20,8 @@ from utils.data_utils import (
 USE_COLBERT_EMBEDDINGS = True  # ✅ NOW USING REAL COLBERT TOKENS!
 NUM_TOKENS = 32
 HIDDEN_DIM_EMB = 768  # ChEmbed hidden dimension
+TEMPERATURE = 0.07  # ✅ Optimized temperature for contrastive learning
+OUT_DIM = 192  # ✅ Token embedding dimension (memory optimized)
 
 # =========================================================
 # 1. HARD NEGATIVE SAMPLER
@@ -134,11 +136,14 @@ def evaluate_retrieval(model, loader, device):
             g_mask_all = all_g_masks.to(device)
             
             # Compute similarities for this chunk against all documents
-            sims_chunk = colbert_score(g_all, t_chunk, g_mask_all)  # [num_samples, chunk_size]
+            sims_chunk = colbert_score(t_chunk, g_all, g_mask_all)  # [chunk_size, num_samples]
             
             # Get ranks for this chunk
             targets_chunk = torch.arange(start_idx, end_idx, device=device)
-            ranks_chunk = (sims_chunk.argsort(dim=0, descending=True) == targets_chunk.unsqueeze(0)).nonzero()[:, 0]
+            # Sort on dim=1 (documents) for each query (dim=0)
+            sorted_indices = sims_chunk.argsort(dim=1, descending=True)  # [chunk_size, num_samples]
+            # Find where the correct document appears for each query
+            ranks_chunk = (sorted_indices == targets_chunk.unsqueeze(1)).nonzero(as_tuple=False)[:, 1]
             all_ranks.append(ranks_chunk.cpu())
             
             # Free GPU memory
@@ -187,11 +192,11 @@ def train_step_2(model, train_loader, val_loader, optimizer, scheduler, device, 
             if model.use_colbert:
                 # ColBERT: Get token embeddings and compute similarity
                 g_tokens, t_tokens, g_mask = model(graphs, text_emb)
-                logits = colbert_score(g_tokens, t_tokens, g_mask) / 0.07  # ✅ Temperature: 0.05 → 0.07
+                logits = colbert_score(t_tokens, g_tokens, g_mask) / TEMPERATURE  # ✅ Correct arg order: text first
             else:
                 # Traditional: Get single vectors
                 g_vec, t_vec = model(graphs, text_emb)
-                logits = (g_vec @ t_vec.T) / 0.07
+                logits = (g_vec @ t_vec.T) / TEMPERATURE
             
             # Symmetric Contrastive Loss [cite: 74, 75]
             # Includes hard negatives in the logits matrix
@@ -260,7 +265,7 @@ if __name__ == "__main__":
     model = MolTransformerDual(
         hidden=128, 
         text_dim=text_input_dim,  # Adjusted based on embedding type
-        out_dim=192,  # ⚠️ Reduced to 128 for memory constraints
+        out_dim=OUT_DIM,  # ✅ Using consistent OUT_DIM constant
         use_colbert=True,
         num_text_tokens=NUM_TOKENS
     ).to(DEVICE)
@@ -268,11 +273,11 @@ if __name__ == "__main__":
     print(f"\nModel Configuration:")
     print(f"  → Graph encoder hidden dim: 128")
     print(f"  → Text input dim: {text_input_dim}")
-    print(f"  → Output token dim: 128  [⚠️ MEMORY CONSTRAINED]")
+    print(f"  → Output token dim: {OUT_DIM}  [⚠️ MEMORY CONSTRAINED]")
     print(f"  → Number of text tokens: {NUM_TOKENS}")
     print(f"  → Using ColBERT mode: True")
     print(f"  → Using REAL ColBERT tokens: {USE_COLBERT_EMBEDDINGS}")
-    print(f"  → Temperature: 0.07  [✅ OPTIMIZED]")
+    print(f"  → Temperature: {TEMPERATURE}  [✅ OPTIMIZED]")
     print(f"  → Training batch size: 12  [⚠️ MEMORY OPTIMIZED]")
     print(f"  → Validation batch size: 8  [⚠️ MEMORY OPTIMIZED]")
     

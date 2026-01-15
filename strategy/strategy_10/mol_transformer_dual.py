@@ -10,17 +10,17 @@ from utils.data_utils import (
     x_map, e_map
 )
 
-def colbert_score(graph_tokens, text_tokens, graph_mask=None):
+def colbert_score(text_tokens, graph_tokens, graph_mask=None):
     """
     ColBERT-style late interaction scoring using MaxSim (Optimized & Vectorized).
     For each query token, find max similarity with document tokens, then sum.
     
     Args:
-        graph_tokens: [batch_size, num_graph_tokens, dim] - normalized
-        text_tokens: [batch_size, num_text_tokens, dim] - normalized
+        text_tokens: [batch_size, num_text_tokens, dim] - normalized (queries)
+        graph_tokens: [batch_size, num_graph_tokens, dim] - normalized (documents)
         graph_mask: [batch_size, num_graph_tokens] - Optional mask for padding (True = valid)
     Returns:
-        scores: [batch_size, batch_size] similarity matrix
+        scores: [batch_size, batch_size] similarity matrix (text x graph)
     """
     # Vectorized computation using einsum
     # i = batch_text, j = batch_graph, t = num_text_tokens, g = num_graph_tokens, d = dim
@@ -205,7 +205,7 @@ class MolTransformerDual(nn.Module):
         """Compute similarity scores using appropriate method"""
         if self.use_colbert:
             g_tokens, t_tokens, g_mask = self.forward(batch, text_emb)
-            return colbert_score(g_tokens, t_tokens, g_mask)
+            return colbert_score(t_tokens, g_tokens, g_mask)  # ✅ Correct order: text first
         else:
             g_vec, t_vec = self.forward(batch, text_emb)
             return g_vec @ t_vec.T

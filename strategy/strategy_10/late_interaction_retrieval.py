@@ -23,7 +23,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_PATH = "/kaggle/working/ALTEGRAD-2025/model_colbert.pt"  
 HIDDEN_DIM = 128
 TEXT_DIM = 32 * 768  # ✅ Flattened ColBERT tokens (32 tokens × 768 dim)
-OUT_DIM = 256  # ✅ Optimized dimension (same as training)
+OUT_DIM = 192  # ✅ Optimized dimension (MUST match training)
 USE_COLBERT = True
 NUM_TEXT_TOKENS = 32
 
@@ -132,33 +132,32 @@ def generate_submission():
             mol_tokens, mol_mask = model.forward_graph(graphs, return_tokens=True)
             # mol_tokens: [bs, max_nodes, out_dim], mol_mask: [bs, max_nodes]
             
-            # --- SIMILARITY SEARCH with ColBERT (Corrected) ---
+            # --- SIMILARITY SEARCH with ColBERT ---
+            # Use colbert_score function for consistency with training
+            # candidate_pool: [num_candidates, num_text_tokens, out_dim]
+            # mol_tokens: [bs, max_nodes, out_dim]
+            # Need to compute score for each molecule vs all candidates
+            
             batch_size_mol = mol_tokens.size(0)
             num_candidates = candidate_pool.size(0)
             sim_matrix = torch.zeros(batch_size_mol, num_candidates, device=DEVICE)
             
-            # Process each molecule
+            # Process each molecule individually to avoid OOM
             for mol_idx in range(batch_size_mol):
-                mol_single = mol_tokens[mol_idx]  # [max_nodes, 128]
+                # Get single molecule tokens: [1, max_nodes, out_dim]
+                mol_single = mol_tokens[mol_idx:mol_idx+1]
+                mask_single = mol_mask[mol_idx:mol_idx+1]
                 
-                # Reshape candidate_pool for matrix multiplication
-                # [num_candidates, num_text_tokens, 128] -> [num_candidates * num_text_tokens, 128]
-                candidate_flat = candidate_pool.view(-1, OUT_DIM)
+                # Expand to match candidates: [num_candidates, max_nodes, out_dim]
+                mol_expanded = mol_single.expand(num_candidates, -1, -1)
+                mask_expanded = mask_single.expand(num_candidates, -1)
                 
-                # Compute similarities: [max_nodes, 128] @ [128, num_candidates * num_text_tokens]
-                # Result: [max_nodes, num_candidates * num_text_tokens]
-                all_sims = torch.matmul(mol_single, candidate_flat.T)
+                # Compute ColBERT scores: [num_candidates, num_candidates]
+                # We only need the diagonal since mol is repeated for each candidate
+                scores_full = colbert_score(candidate_pool, mol_expanded, mask_expanded)
                 
-                # Reshape: [max_nodes, num_candidates, num_text_tokens]
-                all_sims = all_sims.view(mol_single.size(0), num_candidates, NUM_TEXT_TOKENS)
-                
-                # MaxSim ColBERT: For each TEXT token, find max similarity with ANY molecule node
-                # Then sum across all text tokens
-                # [max_nodes, num_candidates, num_text_tokens] -> max over dim=0 -> [num_candidates, num_text_tokens]
-                max_per_text_token = all_sims.max(dim=0)[0]
-                
-                # Sum across text tokens: [num_candidates]
-                scores = max_per_text_token.sum(dim=-1)
+                # Extract diagonal (each candidate vs this molecule)
+                scores = torch.diag(scores_full)  # [num_candidates]
                 sim_matrix[mol_idx] = scores
         else:
             mol_vec = model.forward_graph(graphs, return_tokens=False)
