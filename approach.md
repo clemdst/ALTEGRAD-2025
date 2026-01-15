@@ -184,12 +184,46 @@ The RAG model demonstrated the ability to generate chemically accurate descripti
 
 ---
 
+## Phase 10: ColBERT Late Interaction (Token-Level Matching)
+
+**1. The Problem:**
+All previous dual-tower approaches (Phases 5-8) suffered from a fundamental **information bottleneck**: they compress entire molecules into single fixed-size vectors (128-768 dimensions). This forced compression loses fine-grained information about specific functional groups, atom arrangements, and chemical substructures. When a description mentions "chloro group on the benzene ring," the model must encode this precise spatial relationship into the same vector that also captures overall molecular properties.
+
+**2. The Solution:**
+
+We implemented **ColBERT-style Late Interaction**, which delays the similarity computation until the token level:
+
+**Architecture Overview:**
+
+1. **Graph Tower (Token-Level Encoder):**
+   * Uses Graph Transformer (same as Phase 5) but **removes the pooling layer**
+   * Each atom/node produces its own 128-dimensional token embedding
+   * Returns: `[batch_size, num_atoms, 128]` + validity mask for variable-length molecules
+   * All atom tokens are L2-normalized independently
+
+2. **Text Tower (Token-Level Encoder):**
+   * Uses ChEmbed-ColBERT embeddings (BASF-AI model)
+   * Each word in the description produces its own 768-dimensional embedding
+   * Projects each text token: 768 → 128 dimensions via learned MLP
+   * Returns: `[batch_size, 32_tokens, 128]` (fixed 32 tokens per description)
+   * All text tokens are L2-normalized independently
+
+3. **Late Interaction Scoring (MaxSim):**
+   * Instead of comparing two vectors, we compare two **sets of tokens**
+   * For each text token, find its maximum similarity with ANY atom token: `max_sim_per_text_token = max_over_atoms(text_token · atom_tokens)`
+   * Sum these maximum similarities across all text tokens: `total_score = Σ max_sim_per_text_token`
+   * This allows "chloro" to specifically match the Cl atom, while "benzene" matches the aromatic ring atoms
+
+
+
 ## Future Suggestions: 
 
-Implement Late Interaction (ColBERT-style): Move beyond compressing everything into a single vector. By matching individual atoms in the graph directly to relevant words in the description (e.g., matching a "chloro" group to the word "chlorine"), we can bypass the information bottleneck of our current dual-tower approach.
+**Multi-Task Learning:** Train the model simultaneously on multiple related tasks (retrieval, generation, property prediction) to learn more robust molecular representations.
 
-Multi-Task Learning: Train the model simultaneously on multiple related tasks (retrieval, generation, property prediction) to learn more robust molecular representations.
+**Attention Visualization:** Implement visualization tools to understand which atoms/substructures the model focuses on when generating specific description terms, enabling better interpretability and debugging.
 
-Attention Visualization: Implement visualization tools to understand which atoms/substructures the model focuses on when generating specific description terms, enabling better interpretability and debugging.
+**Mixed Precision Training:** Implement AMP (Automatic Mixed Precision) to reduce memory usage by ~50%, allowing larger batch sizes or higher token dimensions (128 → 256).
+
+**Cross-Attention Fusion:** Extend ColBERT with a lightweight cross-attention layer between text and graph tokens before MaxSim, allowing bidirectional information flow.
 
 
